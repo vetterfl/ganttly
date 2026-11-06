@@ -1,0 +1,174 @@
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { addDays, iso, parseDate } from "../core/dates";
+import { sampleProject, ZOOMS, type Project } from "../core/model";
+import { reducer } from "../core/reducer";
+import { decodeProject, encodeProject } from "../core/urlCodec";
+import { useSettings } from "../settings/SettingsContext";
+import { formatDateObj } from "./format";
+import { TaskGrid } from "./grid/TaskGrid";
+import { useElementWidth, useRowMetrics } from "./hooks";
+import { AddTaskIcon, LinkIcon, PrintIcon, SettingsIcon } from "./icons";
+import { SettingsDialog } from "./SettingsDialog";
+import { Timeline } from "./timeline/Timeline";
+
+function startOfToday(): Date {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function initProject(): Project {
+  const today = startOfToday();
+  const p = decodeProject(location.search, today) ?? sampleProject(today);
+  return reducer(p, { type: "load", project: p });
+}
+
+function useToast(): [string, boolean, (msg: string) => void] {
+  const [msg, setMsg] = useState("");
+  const [show, setShow] = useState(false);
+  const timer = useRef<number | undefined>(undefined);
+  const toast = useCallback((m: string) => {
+    setMsg(m);
+    setShow(true);
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => setShow(false), 2200);
+  }, []);
+  return [msg, show, toast];
+}
+
+export function App() {
+  const [project, dispatch] = useReducer(reducer, undefined, initProject);
+  const [expanded, setExpanded] = useState<ReadonlySet<number>>(() => new Set());
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [toastMsg, toastShown, toast] = useToast();
+  const { settings } = useSettings();
+  const [today] = useState(startOfToday);
+
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const gridRef = useRef<HTMLElement>(null);
+  const settingsBtn = useRef<HTMLButtonElement>(null);
+  const focusTaskId = useRef<number | null>(null);
+
+  const workspaceW = useElementWidth(workspaceRef);
+  const gridW = useElementWidth(gridRef);
+  const metrics = useRowMetrics(workspaceRef, settings.density);
+  const { tasks, zoom, title } = project;
+
+  // URL is the only persistence: rewrite it (v3) on every change.
+  useEffect(() => {
+    history.replaceState(null, "", location.pathname + encodeProject(project));
+  }, [project]);
+  useEffect(() => { document.title = (title || "Untitled") + " — Ganttly"; }, [title]);
+
+  // Focus + select the name of a just-added task.
+  useEffect(() => {
+    if (focusTaskId.current === null) return;
+    const el = document.querySelector<HTMLInputElement>(`.row[data-task-id="${focusTaskId.current}"] .name-input`);
+    focusTaskId.current = null;
+    if (el) { el.focus(); el.select(); }
+  }, [tasks]);
+
+  const setZoom = useCallback((z: number) => dispatch({ type: "setZoom", zoom: z }), []);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      if (e.key === "+" || e.key === "=") { e.preventDefault(); setZoom(zoom + 1); }
+      else if (e.key === "-") { e.preventDefault(); setZoom(zoom - 1); }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [zoom, setZoom]);
+
+  const addTask = () => {
+    focusTaskId.current = project.nextId;
+    dispatch({ type: "addTask", today: iso(startOfToday()) });
+  };
+  const toggle = useCallback((id: number) => setExpanded(prev => {
+    const next = new Set(prev);
+    if (!next.delete(id)) next.add(id);
+    return next;
+  }), []);
+  const remove = useCallback((id: number) => {
+    setExpanded(prev => { const next = new Set(prev); next.delete(id); return next; });
+    dispatch({ type: "deleteTask", id });
+    toast("Task deleted");
+  }, [toast]);
+
+  const copyLink = async () => {
+    const url = location.origin + location.pathname + encodeProject(project);
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = url;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+    }
+    toast("Shareable link copied to clipboard 🔗");
+  };
+
+  const subtitle = useMemo(() => {
+    if (!tasks.length) return "No tasks";
+    const s = tasks.reduce((m, t) => (t.s < m ? t.s : m), tasks[0]!.s);
+    const e = tasks.reduce((m, t) => (t.e > m ? t.e : m), tasks[0]!.e);
+    const f = settings.dateFormat;
+    return `${formatDateObj(addDays(parseDate(s), -2), f)} — ${formatDateObj(addDays(parseDate(e), 3), f)} · ${tasks.length} task${tasks.length > 1 ? "s" : ""}`;
+  }, [tasks, settings.dateFormat]);
+
+  return (
+    <div className={`app density-${settings.density}`}>
+      <header className="titlebar">
+        <div className="logo"><span className="mark" />Ganttly</div>
+        <input className="project-title" type="text" value={title} maxLength={80} aria-label="Project title"
+          onChange={e => dispatch({ type: "setTitle", title: e.target.value })} />
+      </header>
+
+      <nav className="ribbon" aria-label="Commands">
+        <RibbonGroup caption="Task">
+          <button type="button" className="btn" onClick={addTask} title="Add a new task"><AddTaskIcon />Add task</button>
+        </RibbonGroup>
+        <RibbonGroup caption="Share">
+          <button type="button" className="btn" onClick={copyLink} title="Copy a shareable link with all chart data"><LinkIcon />Copy link</button>
+        </RibbonGroup>
+        <RibbonGroup caption="View">
+          <button type="button" className="btn small" onClick={() => setZoom(zoom - 1)} title="Zoom out (Ctrl/⌘ + −)" aria-label="Zoom out">−</button>
+          <span className="zoom-label" aria-live="polite">{ZOOMS[zoom]!.label}</span>
+          <button type="button" className="btn small" onClick={() => setZoom(zoom + 1)} title="Zoom in (Ctrl/⌘ + +)" aria-label="Zoom in">+</button>
+          <button type="button" className="btn" ref={settingsBtn} onClick={() => setSettingsOpen(true)} title="View settings"><SettingsIcon />Settings</button>
+        </RibbonGroup>
+        <RibbonGroup caption="File">
+          <button type="button" className="btn" onClick={() => window.print()} title="Print the chart"><PrintIcon />Print</button>
+        </RibbonGroup>
+        <div className="info">{subtitle}</div>
+      </nav>
+
+      <div className="print-only print-head">
+        <h1>{title || "Untitled Project"}</h1>
+        <p>{subtitle}</p>
+      </div>
+
+      <div className="workspace" ref={workspaceRef}>
+        <div className="split">
+          <TaskGrid ref={gridRef} tasks={tasks} expanded={expanded} onToggle={toggle} onDelete={remove} dispatch={dispatch} />
+          <Timeline tasks={tasks} expanded={expanded} zoom={zoom} today={today}
+            availPx={Math.max(0, workspaceW - gridW - 2)} metrics={metrics} settings={settings} />
+        </div>
+      </div>
+
+      <div className={`toast${toastShown ? " show" : ""}`} role="status">{toastMsg}</div>
+      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} returnFocusRef={settingsBtn} />
+    </div>
+  );
+}
+
+function RibbonGroup({ caption, children }: { caption: string; children: React.ReactNode }) {
+  const id = `cap-${caption.toLowerCase()}`;
+  return (
+    <div className="ribbon-group" role="group" aria-labelledby={id}>
+      <div className="cmds">{children}</div>
+      <div className="caption" id={id}>{caption}</div>
+    </div>
+  );
+}

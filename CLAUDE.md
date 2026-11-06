@@ -4,26 +4,41 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-Ganttly is a single-file, dependency-free Gantt chart web app. Everything (HTML, CSS, JS) lives in `index.html`. There is no build step, package manager, linter, or test suite.
+Ganttly is an MS Project–style Gantt chart web app: Vite + React 18 + TypeScript (strict, `noUncheckedIndexedAccess`). No backend — the whole project lives in the URL. Planning is done with OpenSpec (`openspec/`; main specs in `openspec/specs/`, changes in `openspec/changes/`).
 
-## Running
+## Commands
 
-Open `index.html` directly in a browser, or serve the directory (e.g. `python3 -m http.server`) so `location.origin` produces a usable share link.
+```bash
+npm install
+npm run dev          # dev server with hot reload (use --host 127.0.0.1 if localhost resolves to ::1)
+npm run build        # tsc -b + vite build → static site in dist/ (works from any sub-path, base "./")
+npm run preview      # serve dist/
+npm test             # vitest run (all tests, once)
+npx vitest run src/core/schedule.test.ts   # single test file
+npx vitest run -t "FF"                     # tests matching a name
+npm run lint         # eslint . && tsc -b --noEmit
+```
+
+Opening `index.html` from disk does not work — it is only the Vite entry shell.
 
 ## Architecture
 
-- **All state lives in the URL.** There is no backend or localStorage. `state = { title, tasks[] }` plus `zoomIdx` are serialized on every change via `syncURL()` → `history.replaceState`. The "Copy link" button copies that same URL.
-- **URL format (v2):** `?d=<base64url(JSON {v:2, t, z, tasks})>`. `decodeState()` also reads a legacy v1 format (`?t=title&z=zoom&d=name|start|end|color|progress~...`). Keep v1 decoding working when changing serialization — old shared links depend on it. Any format change should bump `v` and keep older versions readable.
-- **Task shape uses short keys** to keep URLs compact: `n` name, `s` start / `e` end (`YYYY-MM-DD`, end inclusive), `c` color index into `COLORS`, `p` progress 0–100. All decoded tasks pass through `sanitizeTask()`, which is the trust boundary for URL input.
-- **Dates** are handled as local-time `Date` objects via `parseDate()` / `iso()` / `addDays()`; avoid `new Date("YYYY-MM-DD")` (parses as UTC and shifts days).
-- **Layout (MS Project–style):** blue title bar + ribbon (Task / Share / View / File groups), then `#workspace`, the *single* scroll container. Inside it `.split` holds `#gridPane` (task table, `position: sticky; left: 0`) and `#timelinePane`. The grid header and `.timescale` are `sticky; top: 0`. Vertical scroll is shared by construction — don't introduce a second scroller or JS scroll syncing.
-- **Row alignment is pure CSS:** grid `.row` and timeline `.lane` both use `--row-h`; an expanded `.detail` strip and its timeline `.lane.spacer` both use `--detail-h`; both headers use `--header-h`. Lanes are in normal flow (not absolutely positioned), so alignment holds as long as both panes emit the same sequence of heights. Breakpoints and print override these variables (and `--cols`/`--grid-w`), not JS.
-- **Rendering** is string-built `innerHTML`:
-  - `update()` = `syncURL()` + `renderTimeline()` + document/print title. Called on every edit; the timeline is always fully rebuilt (it has no inputs).
-  - `renderGrid()` rebuilds the table only on structural changes (load, add, delete, expand/collapse). Cell edits go through one delegated `input` handler on `#gridBody` and `syncRow(i)` patches the row's other fields in place, skipping `document.activeElement`, so typing never loses focus. Invalid duration/empty dates snap back on `focusout`.
-  - Expanded rows are a `Set` of task *object references* (UI-only, never in the URL), so deleting a row doesn't shift expansion to a neighbour.
-  - User text must go through `escapeHtml()` / `escapeAttr()` when interpolated into templates.
-- **Timeline range:** pixels-per-day from `ZOOMS[zoomIdx].w`; range = min/max task dates padded −2/+3 days, then extended right so bar labels (measured with a canvas) are never clipped and the timeline fills the visible width (re-rendered on window resize).
-- **Colors:** `COLORS` in JS is the single palette source (8 bold colours, index = `c` in the URL, ≥3:1 contrast on white). Keep the index order stable — old links store indexes.
-- **Narrow (<980px):** CSS hides Duration/Start/Finish/% columns; the detail strip's `.narrow-only` inputs (always rendered) carry those fields instead.
-- **Print** uses `@media print`: hides title bar, ribbon, toggles, detail strips and spacer lanes, un-sticks panes, renders inputs as plain text, shows the `.print-only` title block, landscape.
+```
+src/core/      pure TS: no DOM, no React, no implicit "now" (callers pass `today`)
+src/settings/  per-browser view settings (localStorage) + React context
+src/ui/        React components; grid/ and timeline/
+src/styles/theme.css   all styling, incl. row-geometry CSS variables
+```
+
+- **`core/` is the brain and is fully unit-tested.** `model.ts` holds the types and the `Action` union (doc comments there are the behaviour contract). `reducer.ts` applies actions immutably and runs `schedule()` after every mutating action. UI code only dispatches actions — never mutate tasks or recompute dates in components.
+- **Task model:** short keys kept from the URL format — `n` name, `s`/`e` start/finish (`YYYY-MM-DD`, finish inclusive), `c` palette index, `p` progress — plus a stable numeric `id` and `deps: Link[]` (`{ pred: id, type: FS|SS|FF|SF, lag }`). The row number shown in the grid is `index + 1` and is never stored; links always reference ids.
+- **Scheduling** (`schedule.ts`): calendar days, as-soon-as-possible. A task with deps is auto-scheduled (start = latest candidate across its links, duration kept); a task without deps is manual. Full recompute via topological sort on every change — simple and fast enough for hundreds of tasks. `wouldCreateCycle` guards every link change.
+- **Notation** (`notation.ts`): MS Project predecessor shortcuts. Parses German (EA/AA/EE/AE, T/Tage, W/Wochen) and English (FS/SS/FF/SF, d/days, w/weeks), `;` or `,` separated; formats in the language chosen in settings. Row numbers ↔ ids are mapped here.
+- **URL codec** (`urlCodec.ts`): writes v3 (`?d=` base64url JSON `{v:3,t,z,n,tasks:[{i,n,s,e,c,p,d?}]}`), reads v3, v2 and legacy v1. Old shared links must keep working — add a new version rather than changing an existing one. Everything decoded is untrusted: sanitised, bad/cyclic links dropped, then scheduled.
+- **Dates:** use `core/dates.ts` (local-time `parseDate`/`iso`/`addDays`/`diffDays`); never `new Date("YYYY-MM-DD")` (UTC shift).
+- **Settings** (`settings/settings.ts`): notation, date format, density, visible columns, overlay toggles. Stored under `ganttly.settings.v1`, merged over defaults field-by-field, all storage access in try/catch. Never put settings in the share link.
+- **Layout:** `.workspace` is the single scroll container; the grid pane is `position: sticky; left: 0`, both headers `sticky; top: 0`. Don't add a second scroller or JS scroll sync.
+- **Row alignment:** grid `.row` / timeline `.lane` use `--row-h`; an expanded `.detail` strip and its `.lane.spacer` use `--detail-h`; headers use `--header-h` (density and breakpoints change these in CSS). Lanes are in normal flow, so alignment is structural. Arrows can't use flow layout, so they compute lane tops from the same variables via `useRowMetrics()` + `laneTops()`; bars, labels and arrows share `barBox()`/`dayToX()` from `timeline/geometry.ts`.
+- **Dependency arrows:** one SVG overlay; routing in `timeline/arrows.ts` (pure, tested). Two overlays are rendered — `.screen-only` (with spacer lanes) and `.print-only` (without, since print hides detail strips).
+- **Grid columns:** widths come from `grid/columns.ts`, which emits `--cols-*`/`--grid-w-*` CSS variables for the visible columns (screen and print); the <980px breakpoint overrides them in CSS to ID/toggle/name, and the detail strip's `.narrow-only` fields take over.
+- **Palette:** `PALETTE` in `core/model.ts` is the single source (index = `c` in links; keep order stable).
