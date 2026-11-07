@@ -3,6 +3,7 @@ import { reducer } from "./reducer";
 import { lk, mk } from "./helpers.testutil";
 import { MAX_NAME, type Project } from "./model";
 import { formatPredecessors } from "./notation";
+import { decodeProject, encodeProject } from "./urlCodec";
 
 const proj = (tasks = [mk(1, "2026-11-02", "2026-11-06"), mk(2, "2026-11-09", "2026-11-12")]): Project => ({
   title: "P", zoom: 2, nextId: tasks.length + 1, tasks,
@@ -10,6 +11,14 @@ const proj = (tasks = [mk(1, "2026-11-02", "2026-11-06"), mk(2, "2026-11-09", "2
 const TODAY = "2026-11-06";
 
 describe("reducer basics", () => {
+  it("newProject: empty Untitled Project with default zoom and nextId 1", () => {
+    const p = reducer({ ...proj(), title: "Old", zoom: 4, nextId: 9 }, { type: "newProject" });
+    expect(p).toEqual({ title: "Untitled Project", zoom: 2, tasks: [], nextId: 1 });
+  });
+  it("newProject: round-trips through the share link", () => {
+    const p = reducer(proj(), { type: "newProject" });
+    expect(decodeProject(encodeProject(p), new Date(2026, 10, 6))).toEqual(p);
+  });
   it("addTask: day after latest finish, 5 days, next id", () => {
     const p = reducer(proj(), { type: "addTask", today: TODAY });
     const t = p.tasks[2]!;

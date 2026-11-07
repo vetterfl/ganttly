@@ -16,8 +16,8 @@ export function DateCell({ value, label, fmt, onCommit }: {
   const shown = formatDate(value, fmt);
   if (!editing) {
     return (
-      <button type="button" className="date-text" aria-label={`${label}: ${shown}. Edit`} onClick={() => setEditing(true)}>
-        {shown}
+      <button type="button" className="date-text" aria-label={`${label}: ${shown}. Edit`} title={shown} onClick={() => setEditing(true)}>
+        <span className="txt">{shown}</span>
       </button>
     );
   }
@@ -34,8 +34,8 @@ export function DateCell({ value, label, fmt, onCommit }: {
 /** Start of an auto-scheduled task: read-only, marked as computed. */
 export function ComputedDate({ value, fmt }: { value: string; fmt: DateFormat }) {
   return (
-    <span className="date-text computed" title="Calculated from predecessors" aria-readonly="true">
-      <LinkedIcon />{formatDate(value, fmt)}
+    <span className="date-text computed" title={`${formatDate(value, fmt)} · calculated from predecessors`} aria-readonly="true">
+      <LinkedIcon /><span className="txt">{formatDate(value, fmt)}</span>
     </span>
   );
 }

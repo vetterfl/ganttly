@@ -1,4 +1,4 @@
-import { fireEvent, screen, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
 import { b64decode } from "../core/urlCodec";
@@ -201,13 +201,13 @@ describe("settings", () => {
     await openSettings(user);
     await user.selectOptions(screen.getByLabelText("Link notation"), "en");
     await user.click(screen.getByLabelText("Duration column"));
-    expect(screen.queryByText("Duration", { selector: ".grid-head div" })).toBeNull();
+    expect(screen.queryByText("Duration", { selector: ".grid-head .head-label" })).toBeNull();
     expect((screen.getByLabelText("Link notation") as HTMLSelectElement).value).toBe("en");
 
     await user.click(screen.getByRole("button", { name: "Reset to defaults" }));
     expect((screen.getByLabelText("Link notation") as HTMLSelectElement).value).toBe("de");
     expect((screen.getByLabelText("Duration column") as HTMLInputElement).checked).toBe(true);
-    expect(screen.getByText("Duration", { selector: ".grid-head div" })).toBeTruthy();
+    expect(screen.getByText("Duration", { selector: ".grid-head .head-label" })).toBeTruthy();
   });
 
   it("keeps settings out of the share link", async () => {
@@ -222,5 +222,142 @@ describe("settings", () => {
       expect(Object.keys(obj)).not.toContain(k);
       expect(json).not.toContain(`"${k}"`);
     }
+  });
+});
+
+describe("New project", () => {
+  const newBtn = () => screen.getByRole("button", { name: /^New$/ });
+  const confirmDlg = () => document.querySelector<HTMLDialogElement>("dialog.confirm-dialog")!;
+
+  it("asks first, then clears the chart and pushes a history entry", async () => {
+    const user = userEvent.setup();
+    renderApp(four());
+    const before = history.length;
+    await user.click(newBtn());
+    expect(confirmDlg().open).toBe(true);
+    expect(confirmDlg().textContent).toContain("4 tasks");
+    await user.click(screen.getByRole("button", { name: "New project" }));
+    expect(confirmDlg().open).toBe(false);
+    expect(rows()).toHaveLength(0);
+    expect(document.querySelector(".grid-empty")).not.toBeNull();
+    expect((screen.getByLabelText("Project title") as HTMLInputElement).value).toBe("Untitled Project");
+    const p = urlProject();
+    expect([p.title, p.tasks.length, p.nextId]).toEqual(["Untitled Project", 0, 1]);
+    expect(history.length).toBe(before + 1);
+  });
+
+  it("Cancel keeps the project, its URL and the history", async () => {
+    const user = userEvent.setup();
+    renderApp(four());
+    const url = location.href;
+    const before = history.length;
+    await user.click(newBtn());
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(confirmDlg().open).toBe(false);
+    expect(rows()).toHaveLength(4);
+    expect(location.href).toBe(url);
+    expect(history.length).toBe(before);
+    expect(document.activeElement).toBe(newBtn());
+  });
+
+  it("resets an empty project without asking", async () => {
+    const user = userEvent.setup();
+    renderApp({ ...mkProject([]), title: "Scratch" });
+    await user.click(newBtn());
+    expect(confirmDlg().open).toBe(false);
+    expect(urlProject().title).toBe("Untitled Project");
+  });
+
+  it("closes open detail strips", async () => {
+    const user = userEvent.setup();
+    renderApp(four());
+    await user.click(toggle(row(1)));
+    expect(document.querySelector(".detail")).not.toBeNull();
+    await user.click(newBtn());
+    await user.click(screen.getByRole("button", { name: "New project" }));
+    await user.click(screen.getByRole("button", { name: /Add task/ }));
+    expect(document.querySelector(".detail")).toBeNull();
+  });
+
+  it("Back restores the previous project with its links", async () => {
+    const user = userEvent.setup();
+    const p = four();
+    p.tasks[1] = mkTask(2, "Beta", "2026-11-05", "2026-11-06", [lk(1, "SS", 1)]);
+    renderApp(p);
+    await user.click(newBtn());
+    await user.click(screen.getByRole("button", { name: "New project" }));
+    expect(rows()).toHaveLength(0);
+    history.back();
+    await waitFor(() => expect(rows()).toHaveLength(4));
+    expect(nameOf(row(2))).toBe("Beta");
+    expect(urlProject().tasks[1]!.deps).toEqual([lk(1, "SS", 1)]);
+    expect((screen.getByLabelText("Project title") as HTMLInputElement).value).toBe("Test project");
+  });
+});
+
+describe("resizable columns", () => {
+  const handle = (label: string) => screen.getByRole("separator", { name: `Resize ${label} column` });
+  const paneVar = (k: string) => document.querySelector<HTMLElement>(".grid-pane")!.style.getPropertyValue(k);
+  const stored = () => JSON.parse(localStorage.getItem("ganttly.settings.v1") ?? "{}") as { columnWidths?: Record<string, number> };
+
+  it("has a handle on every column except ID and the toggle", () => {
+    renderApp(four());
+    const names = screen.getAllByRole("separator").map(h => h.getAttribute("aria-label"));
+    expect(names).toEqual(["Task Name", "Duration", "Start", "Finish", "% Complete", "Predecessors"].map(l => `Resize ${l} column`));
+  });
+
+  it("→ three times widens Finish by 24px and remembers it", async () => {
+    const user = userEvent.setup();
+    renderApp(four());
+    const h = handle("Finish");
+    expect(h.getAttribute("aria-valuenow")).toBe("104");
+    h.focus();
+    await user.keyboard("{ArrowRight}{ArrowRight}{ArrowRight}");
+    expect(handle("Finish").getAttribute("aria-valuenow")).toBe("128");
+    expect(paneVar("--cols-wide")).toBe("40px 26px 200px 88px 104px 128px 82px 96px");
+    expect(stored().columnWidths).toEqual({ finish: 128 });
+    expect(document.activeElement).toBe(handle("Finish"));
+  });
+
+  it("stops at the column minimum", async () => {
+    const user = userEvent.setup();
+    renderApp(four());
+    handle("Duration").focus();
+    for (let i = 0; i < 10; i++) await user.keyboard("{ArrowLeft}");
+    expect(handle("Duration").getAttribute("aria-valuenow")).toBe("64");
+  });
+
+  it("Home resets a column; Reset to defaults resets all", async () => {
+    const user = userEvent.setup();
+    renderApp(four());
+    handle("Task Name").focus();
+    await user.keyboard("{ArrowRight}{ArrowRight}");
+    handle("% Complete").focus();
+    await user.keyboard("{ArrowRight}");
+    handle("Task Name").focus();
+    await user.keyboard("{Home}");
+    expect(handle("Task Name").getAttribute("aria-valuenow")).toBe("200");
+    expect(stored().columnWidths).toEqual({ pct: 90 });
+    await user.click(screen.getByRole("button", { name: /Settings/ }));
+    await user.click(screen.getByRole("button", { name: "Reset to defaults" }));
+    expect(handle("% Complete").getAttribute("aria-valuenow")).toBe("82");
+    expect(stored().columnWidths).toEqual({});
+  });
+
+  it("keeps column widths out of the share link", async () => {
+    const user = userEvent.setup();
+    renderApp(four());
+    handle("Task Name").focus();
+    await user.keyboard("{ArrowRight}");
+    expect(b64decode(new URLSearchParams(location.search).get("d")!)).not.toContain("columnWidths");
+  });
+
+  it("shows long names and predecessors in full as a tooltip", () => {
+    const p = four();
+    p.tasks[0] = { ...p.tasks[0]!, n: "A very long task name that will never fit into the default column" };
+    p.tasks[1] = mkTask(2, "Beta", "2026-11-05", "2026-11-06", [lk(1)]);
+    renderApp(p);
+    expect(row(1).querySelector<HTMLInputElement>(".name-input")!.title).toBe(p.tasks[0].n);
+    expect(preds(row(2)).title).toBe("1");
   });
 });

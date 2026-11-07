@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, loadSettings, mergeSettings, saveSettings, STORAGE_KEY } from "./settings";
+import { COLUMN_DEFAULTS, DEFAULT_SETTINGS, loadSettings, mergeSettings, saveSettings, STORAGE_KEY } from "./settings";
 
 function memoryStorage(init: Record<string, string> = {}): Storage {
   const m = new Map(Object.entries(init));
@@ -59,5 +59,34 @@ describe("settings", () => {
 
   it("ignores corrupt JSON", () => {
     expect(loadSettings(memoryStorage({ [STORAGE_KEY]: "{not json" }))).toEqual(DEFAULT_SETTINGS);
+  });
+
+  describe("column widths", () => {
+    it("default to none (every column uses its default width)", () => {
+      expect(DEFAULT_SETTINGS.columnWidths).toEqual({});
+      expect(COLUMN_DEFAULTS.duration.def).toBe(88);
+    });
+    it("keep valid widths and drop invalid or unknown entries", () => {
+      const s = mergeSettings({ columnWidths: { name: 280, duration: "wide", start: NaN, pct: null, id: 90, bogus: 120 } });
+      expect(s.columnWidths).toEqual({ name: 280 });
+    });
+    it("clamp to the column minimum and the maximum, rounding to whole px", () => {
+      const s = mergeSettings({ columnWidths: { duration: 10, finish: 5000, preds: 99.6 } });
+      expect(s.columnWidths).toEqual({ duration: 64, finish: 800, preds: 100 });
+    });
+    it("ignore a non-object value", () => {
+      expect(mergeSettings({ columnWidths: 42 }).columnWidths).toEqual({});
+    });
+    it("survive a save/load round trip", () => {
+      const st = memoryStorage();
+      saveSettings({ ...DEFAULT_SETTINGS, columnWidths: { name: 300 } }, st);
+      expect(loadSettings(st).columnWidths).toEqual({ name: 300 });
+    });
+    it("are cleared by Reset (which restores DEFAULT_SETTINGS)", () => {
+      const st = memoryStorage();
+      saveSettings({ ...DEFAULT_SETTINGS, columnWidths: { name: 300, pct: 90 } }, st);
+      saveSettings(DEFAULT_SETTINGS, st);
+      expect(loadSettings(st).columnWidths).toEqual({});
+    });
   });
 });

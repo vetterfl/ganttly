@@ -7,10 +7,12 @@ MS Project–style Gantt charts in the browser — with task dependencies, prede
 ## Features
 
 - **Task table + timeline** side by side, row-aligned like MS Project: ID, Task Name, Duration, Start, Finish, % Complete, Predecessors. Per-task colour, progress and delete live in a collapsible detail row (▸).
+- **Resizable columns:** drag the right edge of a column header, double-click it to fit the widest entry, or focus it and use ←/→ (Home resets). Values that don't fit end in "…" and show in full on hover.
+- **New project:** *New* in the File group starts an empty chart (asking first if the current one has tasks). The browser's Back button brings the previous chart back.
 - **Dependencies** of all four MS Project types — finish-to-start, start-to-start, finish-to-finish, start-to-finish — with lag or lead in days or weeks, drawn as arrows in the timeline.
 - **Auto-scheduling:** a task with predecessors starts as early as its links allow and keeps its duration. Move a task and everything that depends on it follows.
 - **Shareable links:** *Copy link* puts the entire chart (title, zoom, tasks, links) into a URL. Older Ganttly links keep working.
-- **View settings** (per browser, never part of the link): German or English link notation, date format, row density, visible columns, and toggles for arrows, weekend shading, today marker and progress.
+- **View settings** (per browser, never part of the link): German or English link notation, date format, row density, visible columns and their widths, and toggles for arrows, weekend shading, today marker and progress.
 - Bold colour palette, five zoom levels (Ctrl/⌘ + / −), landscape print layout, works on phones.
 
 ## Predecessor shortcuts
@@ -57,7 +59,7 @@ The build is a plain static site with relative asset paths, so `dist/` can be se
 ```
 src/core/       framework-free logic: model, scheduler, notation parser, URL codec (fully unit-tested)
 src/settings/   per-browser view settings (localStorage)
-src/ui/         React components — task grid, timeline, dependency arrows, settings dialog
+src/ui/         React components — task grid, timeline, dependency arrows, settings and confirm dialogs
 src/styles/     theme and layout CSS
 openspec/       specifications and change history (OpenSpec)
 ```

@@ -87,9 +87,18 @@ export function sampleProject(today: Date): Project {
   };
 }
 
+export const UNTITLED = "Untitled Project";
+
+/** The empty project created by the New command. */
+export function emptyProject(): Project {
+  return { title: UNTITLED, zoom: DEFAULT_ZOOM, tasks: [], nextId: 1 };
+}
+
 /** Reducer actions. Tasks are addressed by stable id. */
 export type Action =
   | { type: "load"; project: Project }
+  /** Replaces everything with an empty "Untitled Project" (default zoom, nextId 1). */
+  | { type: "newProject" }
   /** `today` is passed in to keep the reducer pure (used when there are no tasks). */
   | { type: "addTask"; today: string }
   | { type: "deleteTask"; id: number }

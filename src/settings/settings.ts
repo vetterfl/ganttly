@@ -12,11 +12,35 @@ export interface ColumnSettings {
   preds: boolean;
 }
 
+/** Grid columns the user can resize (ID and the expand toggle are fixed). */
+export type ResizableCol = "name" | "duration" | "start" | "finish" | "pct" | "preds";
+
+/** Default and minimum screen width (px) of each resizable column. */
+export const COLUMN_DEFAULTS: Readonly<Record<ResizableCol, { def: number; min: number }>> = Object.freeze({
+  name: { def: 200, min: 80 },
+  duration: { def: 88, min: 64 },
+  start: { def: 104, min: 80 },
+  finish: { def: 104, min: 80 },
+  pct: { def: 82, min: 56 },
+  preds: { def: 96, min: 56 },
+});
+export const RESIZABLE_COLS = Object.keys(COLUMN_DEFAULTS) as ResizableCol[];
+export const MAX_COLUMN_WIDTH = 800;
+
+/** Clamp a width to the column's [min, MAX_COLUMN_WIDTH] range, in whole px. */
+export function clampColumnWidth(col: ResizableCol, w: number): number {
+  return Math.min(Math.max(Math.round(w), COLUMN_DEFAULTS[col].min), MAX_COLUMN_WIDTH);
+}
+
+/** Only the columns the user resized; the rest use COLUMN_DEFAULTS. */
+export type ColumnWidths = Partial<Record<ResizableCol, number>>;
+
 export interface Settings {
   notation: Notation;
   dateFormat: DateFormat;
   density: Density;
   columns: ColumnSettings;
+  columnWidths: ColumnWidths;
   showArrows: boolean;
   showWeekends: boolean;
   showToday: boolean;
@@ -30,6 +54,7 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
   dateFormat: "locale",
   density: "compact",
   columns: Object.freeze({ duration: true, start: true, finish: true, pct: true, preds: true }),
+  columnWidths: Object.freeze({}),
   showArrows: true,
   showWeekends: true,
   showToday: true,
@@ -44,7 +69,13 @@ const bool = (v: unknown, fallback: boolean): boolean => (typeof v === "boolean"
 export function mergeSettings(raw: unknown): Settings {
   const o = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const c = (o.columns && typeof o.columns === "object" ? o.columns : {}) as Record<string, unknown>;
+  const w = (o.columnWidths && typeof o.columnWidths === "object" ? o.columnWidths : {}) as Record<string, unknown>;
   const d = DEFAULT_SETTINGS;
+  const columnWidths: ColumnWidths = {};
+  for (const k of RESIZABLE_COLS) {
+    const v = w[k];
+    if (typeof v === "number" && Number.isFinite(v)) columnWidths[k] = clampColumnWidth(k, v);
+  }
   return {
     notation: oneOf(o.notation, ["de", "en"] as const, d.notation),
     dateFormat: oneOf(o.dateFormat, ["locale", "iso", "dmy"] as const, d.dateFormat),
@@ -56,6 +87,7 @@ export function mergeSettings(raw: unknown): Settings {
       pct: bool(c.pct, d.columns.pct),
       preds: bool(c.preds, d.columns.preds),
     },
+    columnWidths,
     showArrows: bool(o.showArrows, d.showArrows),
     showWeekends: bool(o.showWeekends, d.showWeekends),
     showToday: bool(o.showToday, d.showToday),

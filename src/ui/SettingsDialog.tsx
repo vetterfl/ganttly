@@ -34,7 +34,7 @@ export function SettingsDialog({ open, onClose, returnFocusRef }: {
 
   return (
     <dialog
-      ref={dlg} className="settings-dialog" aria-labelledby="settingsTitle"
+      ref={dlg} className="app-dialog settings-dialog" aria-labelledby="settingsTitle"
       onCancel={e => { e.preventDefault(); onClose(); }}
       onKeyDown={e => { if (e.key === "Escape") { e.preventDefault(); onClose(); } }}
       onClick={e => { if (e.target === dlg.current) onClose(); }}

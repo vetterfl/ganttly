@@ -7,7 +7,7 @@ Defines the overall page shell (command ribbon, full-width grid and timeline spl
 ## Requirements
 
 ### Requirement: Command ribbon
-The page SHALL have a top title bar showing the app name and an editable project title. Below it, a command ribbon SHALL group the commands under labelled groups: Task (Add task), Share (Copy link), View (zoom out, zoom level label, zoom in) and File (Print).
+The page SHALL have a top title bar showing the app name and an editable project title. Below it, a command ribbon SHALL group the commands under labelled groups: Task (Add task), Share (Copy link), View (zoom out, zoom level label, zoom in) and File (New, Print).
 
 #### Scenario: Ribbon groups
 - **WHEN** the page loads
@@ -63,3 +63,22 @@ The command ribbon SHALL include a View Settings command in the View group that 
 #### Scenario: Open settings
 - **WHEN** the user clicks the Settings command in the View group
 - **THEN** the View Settings dialog opens with focus on its first control
+
+### Requirement: New project command
+The New command SHALL replace the current project with an empty project titled "Untitled Project": no tasks, default zoom, and all detail strips closed. If the current project has at least one task, the user SHALL confirm first. The previous project SHALL remain reachable with the browser's Back button.
+
+#### Scenario: Confirm and clear
+- **WHEN** the project has 7 tasks and the user clicks New and confirms
+- **THEN** the grid shows the empty-state prompt, the title reads "Untitled Project", and the share link describes an empty project
+
+#### Scenario: Cancel keeps the project
+- **WHEN** the user clicks New and cancels the confirmation
+- **THEN** the project, its URL and the browser history are unchanged
+
+#### Scenario: No confirmation for an empty project
+- **WHEN** the project has no tasks and the user clicks New
+- **THEN** the project is reset immediately, without a confirmation
+
+#### Scenario: Back restores the previous project
+- **WHEN** the user confirms New and then presses the browser's Back button
+- **THEN** the previous project is shown again with all its tasks, links and title

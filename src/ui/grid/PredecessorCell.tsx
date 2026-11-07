@@ -35,7 +35,7 @@ export function PredecessorCell({ task, tasks, lang, dispatch }: {
       <input
         type="text" className="cell-input" spellCheck={false} autoComplete="off"
         aria-label="Predecessors"
-        title={lang === "de" ? "Vorgänger, z. B. 3;4EA+2T" : "Predecessors, e.g. 3,4FS+2d"}
+        title={(draft ?? formatted) || (lang === "de" ? "Vorgänger, z. B. 3;4EA+2T" : "Predecessors, e.g. 3,4FS+2d")}
         value={draft ?? formatted}
         aria-invalid={error ? "true" : undefined}
         aria-describedby={error ? errId : undefined}

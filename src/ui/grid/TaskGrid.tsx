@@ -1,6 +1,8 @@
-import { forwardRef, type CSSProperties, type Dispatch } from "react";
+import { forwardRef, useCallback, useRef, type CSSProperties, type Dispatch, type ReactNode } from "react";
 import { isAuto, PALETTE, type Action, type Task } from "../../core/model";
 import { useSettings } from "../../settings/SettingsContext";
+import type { ResizableCol } from "../../settings/settings";
+import { ColumnResizer } from "./ColumnResizer";
 import { ChevronIcon, TrashIcon } from "../icons";
 import { ComputedDate, DateCell, DurationInput } from "./cells";
 import { gridColumnVars } from "./columns";
@@ -17,19 +19,40 @@ interface GridProps {
 export const TaskGrid = forwardRef<HTMLElement, GridProps>(function TaskGrid(
   { tasks, expanded, onToggle, onDelete, dispatch }, ref,
 ) {
-  const { settings } = useSettings();
+  const { settings, update } = useSettings();
   const cols = settings.columns;
+  const widths = settings.columnWidths;
+  const paneRef = useRef<HTMLElement | null>(null);
+  const setRefs = useCallback((el: HTMLElement | null) => {
+    paneRef.current = el;
+    if (typeof ref === "function") ref(el);
+    else if (ref) ref.current = el;
+  }, [ref]);
+
+  const commitWidth = useCallback((col: ResizableCol, w: number | null) => {
+    const next = { ...settings.columnWidths };
+    if (w === null) delete next[col]; else next[col] = w;
+    update({ columnWidths: next });
+  }, [settings.columnWidths, update]);
+
+  const head = (col: ResizableCol, label: string, className?: string): ReactNode => (
+    <div className={className} data-col={col}>
+      <span className="head-label">{label}</span>
+      <ColumnResizer col={col} label={label} cols={cols} widths={widths} paneRef={paneRef} onCommit={commitWidth} />
+    </div>
+  );
+
   return (
-    <section className="grid-pane" ref={ref} aria-label="Task table" style={gridColumnVars(cols) as CSSProperties}>
+    <section className="grid-pane" ref={setRefs} aria-label="Task table" style={gridColumnVars(cols, widths) as CSSProperties}>
       <div className="grid-head" role="row">
-        <div>ID</div>
-        <div aria-label="Expand" />
-        <div>Task Name</div>
-        {cols.duration && <div className="c-dur">Duration</div>}
-        {cols.start && <div className="c-start">Start</div>}
-        {cols.finish && <div className="c-fin">Finish</div>}
-        {cols.pct && <div className="c-pct">% Complete</div>}
-        {cols.preds && <div className="c-preds">Predecessors</div>}
+        <div data-col="id">ID</div>
+        <div data-col="toggle" aria-label="Expand" />
+        {head("name", "Task Name")}
+        {cols.duration && head("duration", "Duration", "c-dur")}
+        {cols.start && head("start", "Start", "c-start")}
+        {cols.finish && head("finish", "Finish", "c-fin")}
+        {cols.pct && head("pct", "% Complete", "c-pct")}
+        {cols.preds && head("preds", "Predecessors", "c-preds")}
       </div>
       <div className="grid-body">
         {tasks.length === 0 ? (
@@ -70,15 +93,15 @@ function GridRow({ task: t, index, tasks, open, onToggle, onDelete, dispatch }: 
             <ChevronIcon />
           </button>
         </div>
-        <div>
-          <input type="text" className="cell-input name-input" value={t.n} maxLength={120} aria-label="Task name"
+        <div data-col="name">
+          <input type="text" className="cell-input name-input" value={t.n} maxLength={120} aria-label="Task name" title={t.n}
             onChange={e => dispatch({ type: "rename", id: t.id, name: e.target.value })} />
         </div>
-        {cols.duration && <div className="c-dur cell-dur"><DurationInput task={t} dispatch={dispatch} /><span>days</span></div>}
-        {cols.start && <div className="c-start">{startCell}</div>}
-        {cols.finish && <div className="c-fin">{finishCell}</div>}
-        {cols.pct && <div className="cell-pct c-pct">{t.p}%</div>}
-        {cols.preds && <div className="c-preds"><PredecessorCell task={t} tasks={tasks} lang={settings.notation} dispatch={dispatch} /></div>}
+        {cols.duration && <div className="c-dur cell-dur" data-col="duration"><DurationInput task={t} dispatch={dispatch} /><span className="unit">days</span></div>}
+        {cols.start && <div className="c-start" data-col="start">{startCell}</div>}
+        {cols.finish && <div className="c-fin" data-col="finish">{finishCell}</div>}
+        {cols.pct && <div className="cell-pct c-pct" data-col="pct" title={`${t.p}%`}>{t.p}%</div>}
+        {cols.preds && <div className="c-preds" data-col="preds"><PredecessorCell task={t} tasks={tasks} lang={settings.notation} dispatch={dispatch} /></div>}
       </div>
       {open && (
         <div className="detail" data-task-id={t.id}>

@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { addDays, iso, parseDate } from "../core/dates";
-import { sampleProject, ZOOMS, type Project } from "../core/model";
+import { emptyProject, sampleProject, ZOOMS, type Project } from "../core/model";
 import { reducer } from "../core/reducer";
 import { decodeProject, encodeProject } from "../core/urlCodec";
 import { useSettings } from "../settings/SettingsContext";
 import { formatDateObj } from "./format";
 import { TaskGrid } from "./grid/TaskGrid";
 import { useElementWidth, useRowMetrics } from "./hooks";
-import { AddTaskIcon, LinkIcon, PrintIcon, SettingsIcon } from "./icons";
+import { ConfirmDialog } from "./ConfirmDialog";
+import { AddTaskIcon, LinkIcon, NewFileIcon, PrintIcon, SettingsIcon } from "./icons";
 import { SettingsDialog } from "./SettingsDialog";
 import { Timeline } from "./timeline/Timeline";
 
@@ -17,9 +18,14 @@ function startOfToday(): Date {
   return d;
 }
 
-function initProject(): Project {
+/** The project described by the current URL (sample project when there is none). */
+function projectFromUrl(): Project {
   const today = startOfToday();
-  const p = decodeProject(location.search, today) ?? sampleProject(today);
+  return decodeProject(location.search, today) ?? sampleProject(today);
+}
+
+function initProject(): Project {
+  const p = projectFromUrl();
   return reducer(p, { type: "load", project: p });
 }
 
@@ -40,6 +46,7 @@ export function App() {
   const [project, dispatch] = useReducer(reducer, undefined, initProject);
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(() => new Set());
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [confirmNew, setConfirmNew] = useState(false);
   const [toastMsg, toastShown, toast] = useToast();
   const { settings } = useSettings();
   const [today] = useState(startOfToday);
@@ -47,6 +54,7 @@ export function App() {
   const workspaceRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLElement>(null);
   const settingsBtn = useRef<HTMLButtonElement>(null);
+  const newBtn = useRef<HTMLButtonElement>(null);
   const focusTaskId = useRef<number | null>(null);
 
   const workspaceW = useElementWidth(workspaceRef);
@@ -54,10 +62,20 @@ export function App() {
   const metrics = useRowMetrics(workspaceRef, settings.density);
   const { tasks, zoom, title } = project;
 
-  // URL is the only persistence: rewrite it (v3) on every change.
+  // URL is the only persistence: rewrite it (v3) on every change. Edits replace
+  // the history entry; only New pushes one (see newProject below).
   useEffect(() => {
     history.replaceState(null, "", location.pathname + encodeProject(project));
   }, [project]);
+  // Back/Forward (e.g. after New): load whatever project the URL now holds.
+  useEffect(() => {
+    const onPop = () => {
+      setExpanded(new Set());
+      dispatch({ type: "load", project: projectFromUrl() });
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
   useEffect(() => { document.title = (title || "Untitled") + " — Ganttly"; }, [title]);
 
   // Focus + select the name of a just-added task.
@@ -83,6 +101,17 @@ export function App() {
     focusTaskId.current = project.nextId;
     dispatch({ type: "addTask", today: iso(startOfToday()) });
   };
+  const newProject = () => {
+    setConfirmNew(false);
+    history.pushState(null, "", location.pathname + encodeProject(emptyProject()));
+    setExpanded(new Set());
+    dispatch({ type: "newProject" });
+  };
+  const requestNew = () => {
+    if (tasks.length) setConfirmNew(true);
+    else newProject();
+  };
+
   const toggle = useCallback((id: number) => setExpanded(prev => {
     const next = new Set(prev);
     if (!next.delete(id)) next.add(id);
@@ -139,6 +168,7 @@ export function App() {
           <button type="button" className="btn" ref={settingsBtn} onClick={() => setSettingsOpen(true)} title="View settings"><SettingsIcon />Settings</button>
         </RibbonGroup>
         <RibbonGroup caption="File">
+          <button type="button" className="btn" ref={newBtn} onClick={requestNew} title="Start a new, empty project"><NewFileIcon />New</button>
           <button type="button" className="btn" onClick={() => window.print()} title="Print the chart"><PrintIcon />Print</button>
         </RibbonGroup>
         <div className="info">{subtitle}</div>
@@ -158,6 +188,12 @@ export function App() {
       </div>
 
       <div className={`toast${toastShown ? " show" : ""}`} role="status">{toastMsg}</div>
+      <ConfirmDialog
+        open={confirmNew} title="Start a new project?" returnFocusRef={newBtn}
+        message={<>This replaces “{title || "Untitled Project"}” and its {tasks.length} task{tasks.length === 1 ? "" : "s"} with an empty project. You can get it back with the browser’s Back button.</>}
+        actions={[{ label: "New project", danger: true, onConfirm: newProject }]}
+        onCancel={() => setConfirmNew(false)}
+      />
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} returnFocusRef={settingsBtn} />
     </div>
   );

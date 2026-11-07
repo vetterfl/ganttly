@@ -1,5 +1,5 @@
 import {
-  MAX_DURATION, MAX_NAME, PALETTE, clampZoom, isAuto,
+  MAX_DURATION, MAX_NAME, PALETTE, clampZoom, emptyProject, isAuto,
   type Action, type Project, type Task,
 } from "./model";
 import { ISO_RE, addDaysIso, diffDays, iso, parseDate } from "./dates";
@@ -27,6 +27,9 @@ export function reducer(project: Project, action: Action): Project {
   switch (action.type) {
     case "load":
       return { ...action.project, tasks: schedule(action.project.tasks) };
+
+    case "newProject":
+      return emptyProject();
 
     case "addTask": {
       if (!validIso(action.today)) return project;
