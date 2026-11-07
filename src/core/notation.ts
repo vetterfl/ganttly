@@ -1,5 +1,6 @@
 import type { Link, LinkType, Task } from "./model";
 import { wouldCreateCycle } from "./schedule";
+import type { Calendar } from "./calendar";
 
 export type Lang = "de" | "en";
 export type ParseErrorKind = "syntax" | "unknown" | "self" | "cycle";
@@ -17,7 +18,11 @@ const DAY_UNITS = new Set(["", "d", "day", "days", "t", "tag", "tage"]);
 const WEEK_UNITS = new Set(["w", "wk", "wks", "week", "weeks", "wo", "woche", "wochen"]);
 const ENTRY_RE = /^(\d+)\s*(ea|aa|ee|ae|fs|ss|ff|sf)?\s*(?:([+\-−])\s*(\d+)\s*([a-z]*))?$/i;
 
-export function parsePredecessors(text: string, tasks: Task[], taskId: number): ParseResult {
+/** Days in a week of the project calendar: 7 calendar days or 5 working days. */
+export const weekDays = (cal: Calendar): number => (cal === "workdays" ? 5 : 7);
+
+/** Lags are in project days (calendar or working days); a week is `weekDays(cal)`. */
+export function parsePredecessors(text: string, tasks: Task[], taskId: number, cal: Calendar = "days"): ParseResult {
   const fail = (kind: ParseErrorKind, entry: string, message: string): ParseResult => ({
     ok: false,
     error: { kind, entry, message },
@@ -37,7 +42,7 @@ export function parsePredecessors(text: string, tasks: Task[], taskId: number): 
     const type = m[2] ? (TYPE_MAP[m[2].toLowerCase()] as LinkType) : "FS";
     let lag = 0;
     if (m[3] !== undefined) {
-      lag = Number(m[4]) * (WEEK_UNITS.has(unit) ? 7 : 1);
+      lag = Number(m[4]) * (WEEK_UNITS.has(unit) ? weekDays(cal) : 1);
       if (m[3] !== "+") lag = -lag;
     }
     byPred.delete(target.id); // last one wins, keep order of last occurrence

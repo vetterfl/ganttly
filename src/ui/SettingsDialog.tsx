@@ -1,5 +1,6 @@
 import { useEffect, useRef, type RefObject } from "react";
 import { useSettings } from "../settings/SettingsContext";
+import type { Calendar } from "../core/model";
 import type { ColumnSettings, DateFormat, Density, Notation, Settings } from "../settings/settings";
 
 const COLUMN_LABELS: [keyof ColumnSettings, string][] = [
@@ -10,11 +11,14 @@ const OVERLAY_LABELS: [keyof Pick<Settings, "showArrows" | "showWeekends" | "sho
 ];
 
 /**
- * View Settings (native <dialog>). Every change applies immediately.
+ * Settings (native <dialog>). Every change applies immediately.
  * Closes via Close, Escape, or a click on the backdrop; focus returns to the opener.
+ * The Project section edits the open project (saved in its link); everything
+ * else is a per-browser view setting. "Reset to defaults" only resets the latter.
  */
-export function SettingsDialog({ open, onClose, returnFocusRef }: {
+export function SettingsDialog({ open, onClose, returnFocusRef, calendar, onCalendar }: {
   open: boolean; onClose: () => void; returnFocusRef: RefObject<HTMLElement | null>;
+  calendar: Calendar; onCalendar: (c: Calendar) => void;
 }) {
   const { settings: s, update, reset } = useSettings();
   const dlg = useRef<HTMLDialogElement>(null);
@@ -39,8 +43,22 @@ export function SettingsDialog({ open, onClose, returnFocusRef }: {
       onKeyDown={e => { if (e.key === "Escape") { e.preventDefault(); onClose(); } }}
       onClick={e => { if (e.target === dlg.current) onClose(); }}
     >
-      <header id="settingsTitle">View Settings</header>
+      <header id="settingsTitle">Settings</header>
       <div className="body">
+        <fieldset className="project-section">
+          <legend>Project <span className="hint">— saved with this project and its link</span></legend>
+          <div className="radios" role="radiogroup" aria-label="Schedule in">
+            <span className="radios-label">Schedule in</span>
+            <label className="check">
+              <input type="radio" name="calendar" checked={calendar === "days"} onChange={() => onCalendar("days")} />
+              Calendar days
+            </label>
+            <label className="check">
+              <input type="radio" name="calendar" checked={calendar === "workdays"} onChange={() => onCalendar("workdays")} />
+              Working days (Mon–Fri)
+            </label>
+          </div>
+        </fieldset>
         <fieldset>
           <legend>Notation &amp; dates</legend>
           <label className="field">Link notation

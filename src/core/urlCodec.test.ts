@@ -50,7 +50,7 @@ describe("garbage", () => {
 });
 
 const sample = (): Project => ({
-  title: "Hello Ünï", zoom: 2.5, nextId: 10,
+  title: "Hello Ünï", zoom: 2.5, calendar: "days", nextId: 10,
   tasks: [
     mk(1, "2026-11-01", "2026-11-05", [], "A"),
     mk(4, "2026-11-06", "2026-11-08", [lk(1)], "B"),
@@ -59,7 +59,7 @@ const sample = (): Project => ({
 });
 const scheduled = () => reducer(sample(), { type: "load", project: sample() });
 
-describe("v4", () => {
+describe("v5", () => {
   it("round-trips ids, nextId, deps", () => {
     const p = scheduled();
     const q = decodeProject(encodeProject(p), TODAY)!;
@@ -68,7 +68,8 @@ describe("v4", () => {
   });
   it("omits d when empty and uses expected shape", () => {
     const json = JSON.parse(b64decode(encodeProject(scheduled()).slice(3)));
-    expect(json.v).toBe(4);
+    expect(json.v).toBe(5);
+    expect("cal" in json).toBe(false); // calendar days are the default
     expect(json.zf).toBe(2.5);
     expect("z" in json).toBe(false);
     expect(json.tasks[0]).toEqual({ i: 1, n: "A", s: "2026-11-01", e: "2026-11-05", c: 0, p: 0 });
@@ -135,5 +136,29 @@ describe("zoom factor (v4) and older links", () => {
     expect(p.zoom).toBe(1);
     expect(p.tasks[1]!.deps).toEqual([lk(1, "FS", 2)]);
     expect([p.tasks[1]!.s, p.tasks[1]!.e]).toEqual(["2026-11-09", "2026-11-10"]);
+  });
+});
+
+describe("calendar (v5)", () => {
+  const tasks = [{ i: 1, n: "A", s: "2026-11-09", e: "2026-11-13", c: 0, p: 0 }, { i: 2, n: "B", s: "2026-11-16", e: "2026-11-18", c: 1, p: 0, d: [[1, 0, 2]] }];
+  it("working-day round trip with links", () => {
+    const p = decodeProject(enc({ v: 5, t: "W", zf: 1.5, cal: 1, n: 3, tasks }), TODAY)!;
+    expect(p.calendar).toBe("workdays");
+    expect([p.tasks[1]!.s, p.tasks[1]!.e]).toEqual(["2026-11-18", "2026-11-20"]); // FS+2 working days
+    const json = JSON.parse(b64decode(encodeProject(p).slice(3)));
+    expect([json.v, json.cal]).toEqual([5, 1]);
+    expect(decodeProject(encodeProject(p), TODAY)).toEqual(p);
+  });
+  it.each([[undefined], ["x"], [0], [2], ["workdays"]])("cal %j means calendar days", (cal) => {
+    expect(decodeProject(enc({ v: 5, t: "W", zf: 1, cal, n: 3, tasks }), TODAY)!.calendar).toBe("days");
+  });
+  it("tampered Saturday start in a working-day link moves to Monday", () => {
+    const p = decodeProject(enc({ v: 5, t: "W", zf: 1, cal: 1, n: 2, tasks: [{ i: 1, n: "A", s: "2026-11-07", e: "2026-11-12", c: 0, p: 0 }] }), TODAY)!;
+    expect([p.tasks[0]!.s, p.tasks[0]!.e]).toEqual(["2026-11-09", "2026-11-12"]);
+  });
+  it("v4 opens in calendar days with its zoom", () => {
+    const p = decodeProject(enc({ v: 4, t: "Z", zf: 2.5, cal: 1, n: 3, tasks }), TODAY)!;
+    expect([p.calendar, p.zoom]).toEqual(["days", 2.5]);
+    expect([p.tasks[1]!.s, p.tasks[1]!.e]).toEqual(["2026-11-16", "2026-11-18"]);
   });
 });

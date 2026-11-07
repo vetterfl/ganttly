@@ -3,6 +3,7 @@ import {
   type Link, type Project, type Task,
 } from "./model";
 import { ISO_RE, iso } from "./dates";
+import type { Calendar } from "./calendar";
 import { schedule, wouldCreateCycle } from "./schedule";
 
 
@@ -39,9 +40,11 @@ export function sanitizeTask(f: Fields, today: Date): Pick<Task, "n" | "s" | "e"
 
 export function encodeProject(p: Project): string {
   const payload = JSON.stringify({
-    v: 4,
+    v: 5,
     t: p.title,
     zf: p.zoom,
+    // Calendar: 1 = working days (Mon–Fri); omitted = calendar days.
+    ...(p.calendar === "workdays" ? { cal: 1 } : {}),
     n: p.nextId,
     tasks: p.tasks.map((t) => {
       const o: Record<string, unknown> = { i: t.id, n: t.n, s: t.s, e: t.e, c: t.c, p: t.p };
@@ -54,8 +57,8 @@ export function encodeProject(p: Project): string {
 
 const isObj = (x: unknown): x is Record<string, unknown> => typeof x === "object" && x !== null;
 
-/** v3 and v4 share the task/link encoding; they differ only in how zoom is stored. */
-function decodeLinked(o: Record<string, unknown>, rawTasks: unknown[], today: Date, zoom: number): Project {
+/** v3–v5 share the task/link encoding; they differ in how zoom is stored and whether a calendar is. */
+function decodeLinked(o: Record<string, unknown>, rawTasks: unknown[], today: Date, zoom: number, calendar: Calendar): Project {
   const seen = new Set<number>();
   const ids: (number | null)[] = rawTasks.map((r) => {
     const i = isObj(r) ? r.i : undefined;
@@ -103,8 +106,10 @@ function decodeLinked(o: Record<string, unknown>, rawTasks: unknown[], today: Da
   return {
     title: String(o.t || "My Project"),
     zoom,
+    calendar,
     nextId,
-    tasks: schedule(tasks),
+    // schedule() also moves untrusted weekend dates onto working days.
+    tasks: schedule(tasks, calendar),
   };
 }
 
@@ -116,14 +121,17 @@ export function decodeProject(search: string, today: Date): Project | null {
   try {
     const o: unknown = JSON.parse(b64decode(raw));
     if (isObj(o)) {
-      if (o.v === 4 && Array.isArray(o.tasks)) return decodeLinked(o, o.tasks, today, clampZoomFactor(o.zf));
+      if (o.v === 5 && Array.isArray(o.tasks)) {
+        return decodeLinked(o, o.tasks, today, clampZoomFactor(o.zf), o.cal === 1 ? "workdays" : "days");
+      }
+      if (o.v === 4 && Array.isArray(o.tasks)) return decodeLinked(o, o.tasks, today, clampZoomFactor(o.zf), "days");
       // v1–v3 stored a zoom preset index, which has no meaning any more: open at Fit.
-      if (o.v === 3 && Array.isArray(o.tasks)) return decodeLinked(o, o.tasks, today, FIT_ZOOM);
+      if (o.v === 3 && Array.isArray(o.tasks)) return decodeLinked(o, o.tasks, today, FIT_ZOOM, "days");
       if (Array.isArray(o.tasks)) {
         const tasks: Task[] = o.tasks.map((r: unknown, i: number) => ({
           id: i + 1, ...sanitizeTask(isObj(r) ? r : {}, today), deps: [],
         }));
-        return { title: String(o.t || "My Project"), zoom: FIT_ZOOM, nextId: tasks.length + 1, tasks };
+        return { title: String(o.t || "My Project"), zoom: FIT_ZOOM, calendar: "days", nextId: tasks.length + 1, tasks };
       }
     }
   } catch {
@@ -139,7 +147,7 @@ export function decodeProject(search: string, today: Date): Project | null {
       ...sanitizeTask({ n: f[0], s: f[1], e: f[2], c: f[3], p: f[4] }, today),
       deps: [],
     }));
-    return { title: params.get("t") || "My Project", zoom: FIT_ZOOM, nextId: tasks.length + 1, tasks };
+    return { title: params.get("t") || "My Project", zoom: FIT_ZOOM, calendar: "days", nextId: tasks.length + 1, tasks };
   } catch {
     return null;
   }

@@ -14,7 +14,7 @@ A task SHALL be able to have any number of predecessor links. Each link SHALL na
 - **THEN** task 5 stores two links: finish-to-start on task 3 with lag 0, and start-to-start on task 4 with lag +1 day
 
 ### Requirement: Predecessor notation parsing
-The Predecessors cell SHALL accept a list of entries separated by `;` or `,`. Each entry has the form `<ID>[<type>][±<n><unit>]`. Type codes are EA/AA/EE/AE (German) or FS/SS/FF/SF (English), case-insensitive, defaulting to finish-to-start. Units are days (d, day, days, t, tag, tage) or weeks (w, wk, week, weeks, wo, woche, wochen, = 7 days), with optional spaces, defaulting to days.
+The Predecessors cell SHALL accept a list of entries separated by `;` or `,`. Each entry has the form `<ID>[<type>][±<n><unit>]`. Type codes are EA/AA/EE/AE (German) or FS/SS/FF/SF (English), case-insensitive, defaulting to finish-to-start. Units are days (d, day, days, t, tag, tage) or weeks (w, wk, week, weeks, wo, woche, wochen), with optional spaces, defaulting to days. A day is a day of the project's calendar; a week SHALL be 7 days, or 5 in a working-day project.
 
 #### Scenario: German shortcut
 - **WHEN** the user enters `3EE-2 Tage`
@@ -35,6 +35,10 @@ The Predecessors cell SHALL accept a list of entries separated by `;` or `,`. Ea
 #### Scenario: Clearing links
 - **WHEN** the user empties the Predecessors cell and leaves it
 - **THEN** all of that task's predecessor links are removed
+
+#### Scenario: Weeks in a working-day project
+- **WHEN** in a working-day project the user enters `2aa+1W`
+- **THEN** a start-to-start link on task 2 with lag +5 days is created
 
 ### Requirement: Notation display
 The Predecessors cell SHALL show a task's links in the notation language chosen in view settings. The type code SHALL be omitted for finish-to-start links with zero lag, and the lag SHALL be omitted when it is zero. German uses `;` as separator and `T` as the day unit. English uses `,` and `d`. Lags are always shown in days.

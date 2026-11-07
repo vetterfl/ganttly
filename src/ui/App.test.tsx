@@ -382,7 +382,7 @@ describe("zoom controls", () => {
     await user.click(btn("Zoom in"));
     expect(label()).toBe("156%");
     expect(urlProject().zoom).toBeCloseTo(1.5625, 6);
-    expect(JSON.parse(b64decode(new URLSearchParams(location.search).get("d")!)).v).toBe(4);
+    expect(JSON.parse(b64decode(new URLSearchParams(location.search).get("d")!)).v).toBe(5);
   });
 
   it("Fit and Ctrl/⌘ 0 return to Fit", async () => {
@@ -419,5 +419,66 @@ describe("zoom controls", () => {
     renderApp({ ...four(), zoom: 9 });
     expect(label()).toBe("353%");
     expect(urlProject().zoom).toBe(9);
+  });
+});
+
+describe("project calendar", () => {
+  const linkedWeek = () => mkProject([
+    mkTask(1, "Build", "2026-11-09", "2026-11-13"),
+    mkTask(2, "Test", "2026-11-16", "2026-11-18", [lk(1, "FS", 2)]),
+  ]);
+  const openSettings = async (user: ReturnType<typeof userEvent.setup>) =>
+    user.click(screen.getByRole("button", { name: /Settings/ }));
+  const unit = (r: HTMLElement) => r.querySelector(".c-dur .unit")!.textContent;
+
+  it("switching to working days relabels durations and reschedules links", async () => {
+    const user = userEvent.setup();
+    renderApp(linkedWeek());
+    expect(unit(row(2))).toBe("days");
+    await openSettings(user);
+    expect(document.querySelector("dialog.settings-dialog header")!.textContent).toBe("Settings");
+    await user.click(screen.getByRole("radio", { name: "Working days (Mon–Fri)" }));
+    expect(unit(row(2))).toBe("wdays");
+    expect(within(row(2)).getByLabelText("Duration in working days (Mon–Fri)")).toBeTruthy();
+    const t = urlProject().tasks[1]!;
+    expect([t.s, t.e]).toEqual(["2026-11-18", "2026-11-20"]);
+    expect(urlProject().calendar).toBe("workdays");
+    const json = JSON.parse(b64decode(new URLSearchParams(location.search).get("d")!)) as Record<string, unknown>;
+    expect(json.cal).toBe(1);
+    const stored = JSON.parse(localStorage.getItem("ganttly.settings.v1") ?? "{}") as Record<string, unknown>;
+    expect(Object.keys(stored)).not.toContain("calendar");
+    expect(JSON.stringify(stored)).not.toContain("workdays");
+  });
+
+  it("Reset to defaults keeps the project's calendar", async () => {
+    const user = userEvent.setup();
+    renderApp({ ...linkedWeek(), calendar: "workdays" });
+    await openSettings(user);
+    await user.selectOptions(screen.getByLabelText("Link notation"), "en");
+    await user.click(screen.getByRole("button", { name: "Reset to defaults" }));
+    expect((screen.getByLabelText("Link notation") as HTMLSelectElement).value).toBe("de");
+    expect((screen.getByRole("radio", { name: "Working days (Mon–Fri)" }) as HTMLInputElement).checked).toBe(true);
+    expect(urlProject().calendar).toBe("workdays");
+  });
+
+  it("another project's link opens in its own calendar", async () => {
+    const user = userEvent.setup();
+    const first = renderApp(linkedWeek());
+    await openSettings(user);
+    await user.click(screen.getByRole("radio", { name: "Working days (Mon–Fri)" }));
+    first.unmount();
+    renderApp(linkedWeek());
+    expect(urlProject().calendar).toBe("days");
+    expect(unit(row(1))).toBe("days");
+  });
+
+  it("predecessor weeks are 5 days in a working-day project", async () => {
+    const user = userEvent.setup();
+    renderApp({ ...linkedWeek(), calendar: "workdays" });
+    const input = preds(row(2));
+    await user.clear(input);
+    await user.type(input, "1+1W{Enter}");
+    expect(urlProject().tasks[1]!.deps).toEqual([lk(1, "FS", 5)]);
+    expect(urlProject().tasks[1]!.s).toBe("2026-11-23");
   });
 });

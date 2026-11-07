@@ -6,14 +6,14 @@ import { formatPredecessors } from "./notation";
 import { decodeProject, encodeProject } from "./urlCodec";
 
 const proj = (tasks = [mk(1, "2026-11-02", "2026-11-06"), mk(2, "2026-11-09", "2026-11-12")]): Project => ({
-  title: "P", zoom: 2, nextId: tasks.length + 1, tasks,
+  title: "P", zoom: 2, calendar: "days", nextId: tasks.length + 1, tasks,
 });
 const TODAY = "2026-11-06";
 
 describe("reducer basics", () => {
   it("newProject: empty Untitled Project with default zoom and nextId 1", () => {
     const p = reducer({ ...proj(), title: "Old", zoom: 4, nextId: 9 }, { type: "newProject" });
-    expect(p).toEqual({ title: "Untitled Project", zoom: 1, tasks: [], nextId: 1 });
+    expect(p).toEqual({ title: "Untitled Project", zoom: 1, calendar: "days", tasks: [], nextId: 1 });
   });
   it("newProject: round-trips through the share link", () => {
     const p = reducer(proj(), { type: "newProject" });
@@ -30,7 +30,7 @@ describe("reducer basics", () => {
     expect([p.tasks[1]!.s, p.tasks[1]!.e]).toEqual(["2026-11-07", "2026-11-11"]);
   });
   it("addTask: empty project starts today", () => {
-    const p = reducer({ title: "", zoom: 2, tasks: [], nextId: 1 }, { type: "addTask", today: TODAY });
+    const p = reducer({ title: "", zoom: 2, calendar: "days", tasks: [], nextId: 1 }, { type: "addTask", today: TODAY });
     expect([p.tasks[0]!.s, p.tasks[0]!.e, p.tasks[0]!.c]).toEqual([TODAY, "2026-11-10", 0]);
   });
   it("rename truncates", () => {
@@ -139,5 +139,76 @@ describe("dependencies via reducer", () => {
     let p = reducer(proj(), { type: "deleteTask", id: 2 });
     p = reducer(p, { type: "addTask", today: TODAY });
     expect(p.tasks[1]!.id).toBe(3);
+  });
+});
+
+describe("working-day calendar", () => {
+  const wp = (tasks: ReturnType<typeof mk>[]): Project =>
+    reducer({ title: "W", zoom: 1, calendar: "workdays", nextId: 99, tasks }, { type: "load", project: { title: "W", zoom: 1, calendar: "workdays", nextId: 99, tasks } });
+  const span = (p: Project, id: number) => { const t = p.tasks.find(x => x.id === id)!; return [t.s, t.e]; };
+  const P = (s: string, e: string) => mk(1, s, e);
+  const S3 = (deps: ReturnType<typeof lk>[]) => mk(2, "2026-11-02", "2026-11-04", deps); // 3 working days
+
+  it("auto-scheduled after a Friday finish starts Monday", () => {
+    let p = wp([P("2026-11-09", "2026-11-13"), mk(2, "2026-11-23", "2026-11-25")]);
+    p = reducer(p, { type: "setPredecessors", id: 2, links: [lk(1)] });
+    expect(span(p, 2)).toEqual(["2026-11-16", "2026-11-18"]);
+  });
+  it("FS+2", () => expect(span(wp([P("2026-11-09", "2026-11-13"), S3([lk(1, "FS", 2)])]), 2)).toEqual(["2026-11-18", "2026-11-20"]));
+  it("FF−2 (S has 4 days)", () => {
+    const p = wp([P("2026-11-16", "2026-11-20"), mk(2, "2026-11-02", "2026-11-05", [lk(1, "FF", -2)])]);
+    expect(span(p, 2)).toEqual(["2026-11-13", "2026-11-18"]);
+  });
+  it("SS+1", () => expect(span(wp([P("2026-11-13", "2026-11-13"), S3([lk(1, "SS", 1)])]), 2)[0]).toBe("2026-11-16"));
+  it("SF (S has 2 days)", () => {
+    const p = wp([P("2026-11-16", "2026-11-18"), mk(2, "2026-11-02", "2026-11-03", [lk(1, "SF")])]);
+    expect(span(p, 2)).toEqual(["2026-11-12", "2026-11-13"]);
+  });
+  it("Finish on a Sunday for an auto task snaps to Friday and sets 4 days", () => {
+    let p = wp([P("2026-11-02", "2026-11-09"), mk(2, "2026-11-10", "2026-11-12", [lk(1)])]);
+    expect(span(p, 2)).toEqual(["2026-11-10", "2026-11-12"]);
+    p = reducer(p, { type: "setFinish", id: 2, date: "2026-11-15" });
+    expect(span(p, 2)).toEqual(["2026-11-10", "2026-11-13"]);
+  });
+  it("Duration 10 from Monday ends Friday of the next week", () => {
+    const p = reducer(wp([P("2026-11-02", "2026-11-04")]), { type: "setDuration", id: 1, days: 10 });
+    expect(span(p, 1)).toEqual(["2026-11-02", "2026-11-13"]);
+  });
+  it("Duration 3 from Thursday crosses the weekend", () => {
+    const p = reducer(wp([P("2026-11-12", "2026-11-12")]), { type: "setDuration", id: 1, days: 3 });
+    expect(span(p, 1)).toEqual(["2026-11-12", "2026-11-16"]);
+  });
+  it("Add task after a Friday finish: Monday to Friday", () => {
+    const p = reducer(wp([P("2026-11-16", "2026-11-20")]), { type: "addTask", today: "2026-11-06" });
+    expect(span(p, 99)).toEqual(["2026-11-23", "2026-11-27"]);
+  });
+  it("Add task to an empty project on a Saturday starts Monday", () => {
+    const p = reducer(wp([]), { type: "addTask", today: "2026-11-07" });
+    expect(span(p, 99)).toEqual(["2026-11-09", "2026-11-13"]);
+  });
+  it("Start on a Saturday moves to Monday", () => {
+    const p = reducer(wp([P("2026-11-02", "2026-11-13")]), { type: "setStart", id: 1, date: "2026-11-07" });
+    expect(span(p, 1)).toEqual(["2026-11-09", "2026-11-13"]);
+  });
+  it("switching to working days keeps (snapped) dates; switching back keeps them", () => {
+    const days = reducer(proj([mk(1, "2026-11-07", "2026-11-12")]), { type: "load", project: proj([mk(1, "2026-11-07", "2026-11-12")]) });
+    expect(span(days, 1)).toEqual(["2026-11-07", "2026-11-12"]);
+    const w = reducer(days, { type: "setCalendar", calendar: "workdays" });
+    expect(w.calendar).toBe("workdays");
+    expect(span(w, 1)).toEqual(["2026-11-09", "2026-11-12"]);
+    const back = reducer(w, { type: "setCalendar", calendar: "days" });
+    expect(back.calendar).toBe("days");
+    expect(span(back, 1)).toEqual(["2026-11-09", "2026-11-12"]);
+    expect(reducer(back, { type: "setCalendar", calendar: "days" })).toBe(back);
+  });
+  it("switching reschedules links with lags in the new unit", () => {
+    const base = proj([mk(1, "2026-11-09", "2026-11-13"), mk(2, "2026-11-02", "2026-11-04", [lk(1, "FS", 2)])]);
+    const d = reducer(base, { type: "load", project: base });
+    expect(span(d, 2)).toEqual(["2026-11-16", "2026-11-18"]); // Sat+Sun counted
+    const w = reducer(d, { type: "setCalendar", calendar: "workdays" });
+    expect(span(w, 2)).toEqual(["2026-11-18", "2026-11-20"]);
+  });
+  it("new project is calendar days", () => {
+    expect(reducer(wp([]), { type: "newProject" }).calendar).toBe("days");
   });
 });

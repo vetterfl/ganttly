@@ -186,7 +186,7 @@ export function App() {
 
       <div className="workspace" ref={workspaceRef}>
         <div className="split">
-          <TaskGrid ref={gridRef} tasks={tasks} expanded={expanded} onToggle={toggle} onDelete={remove} dispatch={dispatch} />
+          <TaskGrid ref={gridRef} tasks={tasks} expanded={expanded} onToggle={toggle} onDelete={remove} dispatch={dispatch} calendar={project.calendar} />
           <Timeline tasks={tasks} expanded={expanded} w={zoomApi.w} today={today}
             availPx={availPx} metrics={metrics} settings={settings} />
         </div>
@@ -199,7 +199,8 @@ export function App() {
         actions={[{ label: "New project", danger: true, onConfirm: newProject }]}
         onCancel={() => setConfirmNew(false)}
       />
-      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} returnFocusRef={settingsBtn} />
+      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} returnFocusRef={settingsBtn}
+        calendar={project.calendar} onCalendar={calendar => dispatch({ type: "setCalendar", calendar })} />
     </div>
   );
 }

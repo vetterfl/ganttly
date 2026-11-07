@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useRef, type CSSProperties, type Dispatch, type ReactNode } from "react";
-import { isAuto, PALETTE, type Action, type Task } from "../../core/model";
+import { isAuto, PALETTE, type Action, type Calendar, type Task } from "../../core/model";
 import { useSettings } from "../../settings/SettingsContext";
 import type { ResizableCol } from "../../settings/settings";
 import { ColumnResizer } from "./ColumnResizer";
@@ -14,10 +14,12 @@ interface GridProps {
   onToggle: (id: number) => void;
   onDelete: (id: number) => void;
   dispatch: Dispatch<Action>;
+  /** Project calendar: durations and lags are in its days. */
+  calendar: Calendar;
 }
 
 export const TaskGrid = forwardRef<HTMLElement, GridProps>(function TaskGrid(
-  { tasks, expanded, onToggle, onDelete, dispatch }, ref,
+  { tasks, expanded, onToggle, onDelete, dispatch, calendar }, ref,
 ) {
   const { settings, update } = useSettings();
   const cols = settings.columns;
@@ -60,7 +62,7 @@ export const TaskGrid = forwardRef<HTMLElement, GridProps>(function TaskGrid(
         ) : (
           tasks.map((t, i) => (
             <GridRow key={t.id} task={t} index={i} tasks={tasks} open={expanded.has(t.id)}
-              onToggle={onToggle} onDelete={onDelete} dispatch={dispatch} />
+              onToggle={onToggle} onDelete={onDelete} dispatch={dispatch} calendar={calendar} />
           ))
         )}
       </div>
@@ -68,10 +70,11 @@ export const TaskGrid = forwardRef<HTMLElement, GridProps>(function TaskGrid(
   );
 });
 
-function GridRow({ task: t, index, tasks, open, onToggle, onDelete, dispatch }: {
+function GridRow({ task: t, index, tasks, open, onToggle, onDelete, dispatch, calendar }: {
   task: Task; index: number; tasks: Task[]; open: boolean;
-  onToggle: (id: number) => void; onDelete: (id: number) => void; dispatch: Dispatch<Action>;
+  onToggle: (id: number) => void; onDelete: (id: number) => void; dispatch: Dispatch<Action>; calendar: Calendar;
 }) {
+  const unit = calendar === "workdays" ? "wdays" : "days";
   const { settings } = useSettings();
   const cols = settings.columns;
   const fmt = settings.dateFormat;
@@ -97,11 +100,11 @@ function GridRow({ task: t, index, tasks, open, onToggle, onDelete, dispatch }: 
           <input type="text" className="cell-input name-input" value={t.n} maxLength={120} aria-label="Task name" title={t.n}
             onChange={e => dispatch({ type: "rename", id: t.id, name: e.target.value })} />
         </div>
-        {cols.duration && <div className="c-dur cell-dur" data-col="duration"><DurationInput task={t} dispatch={dispatch} /><span className="unit">days</span></div>}
+        {cols.duration && <div className="c-dur cell-dur" data-col="duration"><DurationInput task={t} dispatch={dispatch} calendar={calendar} /><span className="unit">{unit}</span></div>}
         {cols.start && <div className="c-start" data-col="start">{startCell}</div>}
         {cols.finish && <div className="c-fin" data-col="finish">{finishCell}</div>}
         {cols.pct && <div className="cell-pct c-pct" data-col="pct" title={`${t.p}%`}>{t.p}%</div>}
-        {cols.preds && <div className="c-preds" data-col="preds"><PredecessorCell task={t} tasks={tasks} lang={settings.notation} dispatch={dispatch} /></div>}
+        {cols.preds && <div className="c-preds" data-col="preds"><PredecessorCell task={t} tasks={tasks} lang={settings.notation} calendar={calendar} dispatch={dispatch} /></div>}
       </div>
       {open && (
         <div className="detail" data-task-id={t.id}>
@@ -120,8 +123,8 @@ function GridRow({ task: t, index, tasks, open, onToggle, onDelete, dispatch }: 
             </label>
             <label className="narrow-only">Start {startCell}</label>
             <label className="narrow-only">Finish {finishCell}</label>
-            <label className="narrow-only">Duration <DurationInput task={t} dispatch={dispatch} /> days</label>
-            <label className="narrow-only">Predecessors <PredecessorCell task={t} tasks={tasks} lang={settings.notation} dispatch={dispatch} /></label>
+            <label className="narrow-only">Duration <DurationInput task={t} dispatch={dispatch} calendar={calendar} /> {unit}</label>
+            <label className="narrow-only">Predecessors <PredecessorCell task={t} tasks={tasks} lang={settings.notation} calendar={calendar} dispatch={dispatch} /></label>
             <button type="button" className="del" title="Delete task" onClick={() => onDelete(t.id)}><TrashIcon /> Delete</button>
           </div>
         </div>

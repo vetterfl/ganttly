@@ -253,7 +253,11 @@ body {
 .settings-dialog select { font: inherit; padding: 4px 6px; border: 1px solid var(--line); border-radius: var(--radius); background: #fff; min-width: 200px; }
 .settings-dialog .check { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
 .settings-dialog .checks { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
-.settings-dialog input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px; }
+.settings-dialog input[type="checkbox"], .settings-dialog input[type="radio"] { accent-color: var(--accent); width: 15px; height: 15px; }
+.settings-dialog .project-section { background: var(--accent-soft); margin: 0 -16px; padding: 8px 16px; border-bottom: 1px solid #c7dcf5; }
+.settings-dialog .hint { font-weight: 400; text-transform: none; letter-spacing: 0; }
+.settings-dialog .radios { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; padding: 4px 0; }
+.settings-dialog .radios-label { margin-right: 4px; }
 .app-dialog footer { display: flex; justify-content: space-between; gap: 8px; padding: 10px 16px; background: var(--head-bg); border-top: 1px solid var(--line); }
 
 .confirm-dialog { width: min(400px, calc(100vw - 32px)); }

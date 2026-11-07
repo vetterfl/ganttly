@@ -1,22 +1,31 @@
 import type { Link, Task } from "./model";
-import { addDaysIso, durationOf } from "./dates";
+import { calendarOps, durationIn, snapTask, type Calendar, type CalendarOps } from "./calendar";
 
-/** Candidate start (ISO) for a task of duration `d` given one link and its predecessor. */
-function candidate(link: Link, pred: Task, d: number): string {
+/**
+ * Candidate start index for a task of duration `d` (project days) given one
+ * link and its predecessor. Indexes count the project's days (calendarOps),
+ * so the same formulas serve calendar-day and working-day projects.
+ */
+function candidate(link: Link, pred: Task, d: number, ops: CalendarOps): number {
   switch (link.type) {
     case "FS":
-      return addDaysIso(pred.e, 1 + link.lag);
+      return ops.finishIdx(pred.e) + 1 + link.lag;
     case "SS":
-      return addDaysIso(pred.s, link.lag);
+      return ops.startIdx(pred.s) + link.lag;
     case "FF":
-      return addDaysIso(pred.e, link.lag - (d - 1));
+      return ops.finishIdx(pred.e) + link.lag - (d - 1);
     case "SF":
-      return addDaysIso(pred.s, -1 + link.lag - (d - 1));
+      return ops.startIdx(pred.s) - 1 + link.lag - (d - 1);
   }
 }
 
-/** Recompute dates of all auto-scheduled tasks. Pure; unchanged tasks keep identity. */
-export function schedule(tasks: Task[]): Task[] {
+/**
+ * Recompute dates of all auto-scheduled tasks in the given calendar, and move
+ * manual tasks onto counted days (a no-op for "days"). Pure; unchanged tasks
+ * keep identity.
+ */
+export function schedule(tasks: Task[], cal: Calendar = "days"): Task[] {
+  const ops = calendarOps(cal);
   const byId = new Map<number, Task>();
   for (const t of tasks) byId.set(t.id, t);
 
@@ -41,16 +50,20 @@ export function schedule(tasks: Task[]): Task[] {
     const t = cur.get(id) as Task;
     const links = t.deps.filter((l) => cur.has(l.pred));
     if (links.length > 0) {
-      const d = durationOf(t);
-      let start: string | null = null;
+      const d = durationIn(t, cal);
+      let start: number | null = null;
       for (const l of links) {
-        const c = candidate(l, cur.get(l.pred) as Task, d);
+        const c = candidate(l, cur.get(l.pred) as Task, d, ops);
         if (start === null || c > start) start = c;
       }
       if (start !== null) {
-        const e = addDaysIso(start, d - 1);
-        if (start !== t.s || e !== t.e) cur.set(id, { ...t, s: start, e });
+        const s = ops.toIso(start);
+        const e = ops.toIso(start + d - 1);
+        if (s !== t.s || e !== t.e) cur.set(id, { ...t, s, e });
       }
+    } else {
+      const snapped = snapTask(t, cal);
+      if (snapped !== t) cur.set(id, snapped);
     }
     for (const sId of succ.get(id) ?? []) {
       const n = (indeg.get(sId) as number) - 1;

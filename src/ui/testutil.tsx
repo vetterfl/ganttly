@@ -12,7 +12,7 @@ export const mkTask = (id: number, n: string, s: string, e: string, deps: Link[]
 });
 
 export const mkProject = (tasks: Task[]): Project => ({
-  title: "Test project", zoom: 1, tasks, nextId: tasks.length + 1,
+  title: "Test project", zoom: 1, calendar: "days", tasks, nextId: tasks.length + 1,
 });
 
 /** Put the project into the URL, then render the app on top of it. */

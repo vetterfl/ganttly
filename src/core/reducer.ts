@@ -2,14 +2,16 @@ import {
   MAX_DURATION, MAX_NAME, PALETTE, clampZoomFactor, emptyProject, isAuto,
   type Action, type Project, type Task,
 } from "./model";
-import { ISO_RE, addDaysIso, diffDays, iso, parseDate } from "./dates";
+import { ISO_RE, iso, parseDate } from "./dates";
+import { calendarOps, toCalendar } from "./calendar";
 import { schedule, wouldCreateCycle } from "./schedule";
 
 const validIso = (s: unknown): s is string =>
   typeof s === "string" && ISO_RE.test(s) && iso(parseDate(s)) === s;
 
 function withTasks(p: Project, tasks: Task[], extra: Partial<Project> = {}): Project {
-  return { ...p, ...extra, tasks: schedule(tasks) };
+  const next = { ...p, ...extra };
+  return { ...next, tasks: schedule(tasks, next.calendar) };
 }
 
 function edit(p: Project, id: number, fn: (t: Task) => Task | null): Project {
@@ -26,18 +28,20 @@ function edit(p: Project, id: number, fn: (t: Task) => Task | null): Project {
 export function reducer(project: Project, action: Action): Project {
   switch (action.type) {
     case "load":
-      return { ...action.project, tasks: schedule(action.project.tasks) };
+      return { ...action.project, tasks: schedule(action.project.tasks, action.project.calendar) };
 
     case "newProject":
       return emptyProject();
 
     case "addTask": {
       if (!validIso(action.today)) return project;
+      const ops = calendarOps(project.calendar);
       let last = action.today;
       for (const t of project.tasks) if (t.e > last) last = t.e;
-      const s = project.tasks.length ? addDaysIso(last, 1) : last;
+      // The day after the latest finish (or today, when there are no tasks), in project days.
+      const si = project.tasks.length ? ops.finishIdx(last) + 1 : ops.startIdx(last);
       const task: Task = {
-        id: project.nextId, n: "New task", s, e: addDaysIso(s, 4),
+        id: project.nextId, n: "New task", s: ops.toIso(si), e: ops.toIso(si + 4),
         c: project.tasks.length % PALETTE.length, p: 0, deps: [],
       };
       return withTasks(project, [...project.tasks, task], { nextId: project.nextId + 1 });
@@ -68,15 +72,20 @@ export function reducer(project: Project, action: Action): Project {
       return edit(project, action.id, (t) => {
         if (!validIso(action.date)) return null;
         if (isAuto(t)) {
-          const d = Math.min(MAX_DURATION, Math.max(1, diffDays(action.date, t.s) + 1));
-          return { ...t, e: addDaysIso(t.s, d - 1) };
+          const ops = calendarOps(project.calendar);
+          const si = ops.startIdx(t.s);
+          const d = Math.min(MAX_DURATION, Math.max(1, ops.finishIdx(action.date) - si + 1));
+          return { ...t, e: ops.toIso(si + d - 1) };
         }
         return { ...t, s: action.date < t.s ? action.date : t.s, e: action.date };
       });
 
     case "setDuration":
       if (!Number.isInteger(action.days) || action.days < 1 || action.days > MAX_DURATION) return project;
-      return edit(project, action.id, (t) => ({ ...t, e: addDaysIso(t.s, action.days - 1) }));
+      return edit(project, action.id, (t) => {
+        const ops = calendarOps(project.calendar);
+        return { ...t, e: ops.toIso(ops.startIdx(t.s) + action.days - 1) };
+      });
 
     case "setColor": {
       const c = Math.min(Math.max(Math.trunc(action.color) || 0, 0), PALETTE.length - 1);
@@ -90,6 +99,12 @@ export function reducer(project: Project, action: Action): Project {
 
     case "setTitle":
       return { ...project, title: action.title };
+
+    case "setCalendar": {
+      const calendar = toCalendar(action.calendar);
+      if (calendar === project.calendar) return project;
+      return withTasks(project, project.tasks, { calendar });
+    }
 
     case "setZoom":
       return { ...project, zoom: clampZoomFactor(action.zoom) };

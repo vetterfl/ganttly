@@ -3,7 +3,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Predecessor notation parsing
-The Predecessors cell SHALL accept a list of entries separated by `;` or `,`. Each entry has the form `<ID>[<type>][±<n><unit>]`. Type codes are EA/AA/EE/AE (German) or FS/SS/FF/SF (English), case-insensitive, defaulting to finish-to-start. Units are days (d, day, days, t, tag, tage) or weeks (w, wk, week, weeks, wo, woche, wochen), with optional spaces, defaulting to days. Days are days of the project's calendar. A week SHALL equal 7 days in a calendar-day project and 5 days in a working-day project.
+The Predecessors cell SHALL accept a list of entries separated by `;` or `,`. Each entry has the form `<ID>[<type>][±<n><unit>]`. Type codes are EA/AA/EE/AE (German) or FS/SS/FF/SF (English), case-insensitive, defaulting to finish-to-start. Units are days (d, day, days, t, tag, tage) or weeks (w, wk, week, weeks, wo, woche, wochen), with optional spaces, defaulting to days. A day is a day of the project's calendar; a week SHALL be 7 days, or 5 in a working-day project.
 
 #### Scenario: German shortcut
 - **WHEN** the user enters `3EE-2 Tage`

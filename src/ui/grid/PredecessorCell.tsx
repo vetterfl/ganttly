@@ -1,5 +1,5 @@
 import { useId, useState, type Dispatch } from "react";
-import type { Action, Task } from "../../core/model";
+import type { Action, Calendar, Task } from "../../core/model";
 import { formatPredecessors, parsePredecessors, type Lang, type ParseError } from "../../core/notation";
 
 /**
@@ -7,8 +7,8 @@ import { formatPredecessors, parsePredecessors, type Lang, type ParseError } fro
  * in the configured language). Commits on Enter or blur; Escape reverts.
  * A rejected entry keeps the typed text, marked invalid, with an inline error.
  */
-export function PredecessorCell({ task, tasks, lang, dispatch }: {
-  task: Task; tasks: Task[]; lang: Lang; dispatch: Dispatch<Action>;
+export function PredecessorCell({ task, tasks, lang, calendar, dispatch }: {
+  task: Task; tasks: Task[]; lang: Lang; calendar: Calendar; dispatch: Dispatch<Action>;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
   const [error, setError] = useState<ParseError | null>(null);
@@ -18,7 +18,7 @@ export function PredecessorCell({ task, tasks, lang, dispatch }: {
   const commit = () => {
     if (draft === null) return;
     if (draft.trim() === formatted) { setDraft(null); setError(null); return; }
-    const r = parsePredecessors(draft, tasks, task.id);
+    const r = parsePredecessors(draft, tasks, task.id, calendar);
     if (r.ok) {
       dispatch({ type: "setPredecessors", id: task.id, links: r.links });
       setDraft(null);

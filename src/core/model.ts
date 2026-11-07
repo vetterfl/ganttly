@@ -1,7 +1,10 @@
 // Domain model shared by the scheduler, notation parser, URL codec and UI.
 // Everything in src/core is pure TypeScript: no DOM, no React.
 
+import type { Calendar } from "./calendar";
 import { addDays, iso } from "./dates";
+
+export type { Calendar };
 
 /** Canonical, language-neutral link types (German EA/AA/EE/AE map onto these). */
 export type LinkType = "FS" | "SS" | "FF" | "SF";
@@ -36,6 +39,12 @@ export interface Project {
   /** Zoom factor relative to Fit: 1 = whole project fits the timeline, ≥ 1. */
   zoom: number;
   tasks: Task[];
+  /**
+   * Which days count for durations, lags and link formulas: every calendar day,
+   * or Monday–Friday only. In "workdays" projects every task starts and ends
+   * on a working day (enforced by schedule()). Part of the project and its link.
+   */
+  calendar: Calendar;
   /** Next id to hand out; always > every task id. */
   nextId: number;
 }
@@ -73,6 +82,7 @@ export function sampleProject(today: Date): Project {
   return {
     title: "Website Relaunch",
     zoom: FIT_ZOOM,
+    calendar: "days",
     nextId: 8,
     tasks: [
       mk(1, "Research & strategy", -4, 5, 0, 100),
@@ -90,7 +100,7 @@ export const UNTITLED = "Untitled Project";
 
 /** The empty project created by the New command. */
 export function emptyProject(): Project {
-  return { title: UNTITLED, zoom: FIT_ZOOM, tasks: [], nextId: 1 };
+  return { title: UNTITLED, zoom: FIT_ZOOM, calendar: "days", tasks: [], nextId: 1 };
 }
 
 /** Reducer actions. Tasks are addressed by stable id. */
@@ -102,15 +112,17 @@ export type Action =
   | { type: "addTask"; today: string }
   | { type: "deleteTask"; id: number }
   | { type: "rename"; id: number; name: string }
-  /** Ignored for auto-scheduled tasks. Manual: if finish < start, finish := start. */
+  /** Ignored for auto-scheduled tasks. Manual: if finish < start, finish := start. Snapped onto counted days. */
   | { type: "setStart"; id: number; date: string }
   /** Manual: if finish < start, start := finish. Auto: sets duration = finish − start + 1 (min 1). */
   | { type: "setFinish"; id: number; date: string }
-  /** Whole days 1..MAX_DURATION; keeps start, finish := start + days − 1. Invalid → no-op. */
+  /** Whole project days 1..MAX_DURATION; keeps start, finish := start + days − 1 (in the project calendar). Invalid → no-op. */
   | { type: "setDuration"; id: number; days: number }
   | { type: "setColor"; id: number; color: number }
   | { type: "setProgress"; id: number; pct: number }
   | { type: "setTitle"; title: string }
+  /** Switch the project calendar: dates are kept (snapped onto working days), durations re-counted, links rescheduled. */
+  | { type: "setCalendar"; calendar: Calendar }
   /** Zoom factor; clamped by clampZoomFactor (below 1 / invalid → 1). */
   | { type: "setZoom"; zoom: number }
   /** Replaces the task's links. Rejected (no-op) if it references unknown ids, itself, or creates a cycle. */

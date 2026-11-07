@@ -92,3 +92,11 @@ describe("formatPredecessors", () => {
     expect(parse(text)).toEqual({ ok: true, links: [lk(20, "SS", 7), lk(40, "SF", -3)] });
   });
 });
+
+describe("weeks follow the project calendar", () => {
+  it("2aa+1W is 7 days in calendar days and 5 in working days", () => {
+    expect(parsePredecessors("2aa+1W", six, 60, "days")).toEqual({ ok: true, links: [lk(20, "SS", 7)] });
+    expect(parsePredecessors("2aa+1W", six, 60, "workdays")).toEqual({ ok: true, links: [lk(20, "SS", 5)] });
+    expect(parsePredecessors("3EE-2Wochen; 4+3T", six, 60, "workdays")).toEqual({ ok: true, links: [lk(30, "FF", -10), lk(40, "FS", 3)] });
+  });
+});

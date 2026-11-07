@@ -71,7 +71,7 @@ describe("schedule", () => {
 
 describe("chain push and pull via reducer", () => {
   const base: Project = {
-    title: "x", zoom: 2, nextId: 4,
+    title: "x", zoom: 2, calendar: "days", nextId: 4,
     tasks: [
       mk(1, "2026-11-01", "2026-11-05"),
       mk(2, "2026-11-06", "2026-11-08", [lk(1)]),

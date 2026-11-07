@@ -1,6 +1,7 @@
 import { useState, type Dispatch } from "react";
-import { durationOf, ISO_RE } from "../../core/dates";
-import { MAX_DURATION, type Action, type Task } from "../../core/model";
+import { durationIn } from "../../core/calendar";
+import { ISO_RE } from "../../core/dates";
+import { MAX_DURATION, type Action, type Calendar, type Task } from "../../core/model";
 import type { DateFormat } from "../../settings/settings";
 import { formatDate } from "../format";
 import { LinkedIcon } from "../icons";
@@ -40,16 +41,17 @@ export function ComputedDate({ value, fmt }: { value: string; fmt: DateFormat })
   );
 }
 
-/** Duration in whole days. Invalid input is ignored while typing and reverts on blur. */
-export function DurationInput({ task, dispatch, className = "cell-input" }: {
-  task: Task; dispatch: Dispatch<Action>; className?: string;
+/** Duration in whole project days (calendar or working days). Invalid input is ignored while typing and reverts on blur. */
+export function DurationInput({ task, dispatch, calendar, className = "cell-input" }: {
+  task: Task; dispatch: Dispatch<Action>; calendar: Calendar; className?: string;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
-  const dur = String(durationOf(task));
+  const dur = String(durationIn(task, calendar));
+  const label = calendar === "workdays" ? "Duration in working days (Mon–Fri)" : "Duration in days";
   return (
     <input
       type="number" className={className} min={1} max={MAX_DURATION} step={1}
-      aria-label="Duration in days" title="Duration in days"
+      aria-label={label} title={label}
       value={draft ?? dur}
       onFocus={() => setDraft(dur)}
       onChange={e => {

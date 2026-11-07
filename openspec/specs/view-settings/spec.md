@@ -7,7 +7,7 @@ Lets each user tailor how the grid and timeline are displayed (notation language
 ## Requirements
 
 ### Requirement: Settings dialog
-The system SHALL provide a View Settings dialog, opened from the ribbon, that applies each change immediately and can be closed with a Close button, the Escape key or a click outside the dialog.
+The system SHALL provide a Settings dialog, opened from the ribbon, that applies each change immediately and can be closed with a Close button, the Escape key or a click outside the dialog. Besides the view settings, the dialog SHALL have a Project section, visually separated and labelled as saved with the project, whose options belong to the open project and its share link rather than to the browser.
 
 #### Scenario: Live apply
 - **WHEN** the user switches row density in the dialog
@@ -16,6 +16,10 @@ The system SHALL provide a View Settings dialog, opened from the ribbon, that ap
 #### Scenario: Close with Escape
 - **WHEN** the dialog is open and the user presses Escape
 - **THEN** the dialog closes and focus goes back to the Settings button
+
+#### Scenario: Project options are not view settings
+- **WHEN** the user switches the project to working days in the Project section and then opens a different project's link in the same browser
+- **THEN** the other project opens in its own calendar, not in working days
 
 ### Requirement: Notation and date format settings
 The dialog SHALL offer link notation (German EA/AA/EE/AE with T, or English FS/SS/FF/SF with d; default German) and date format (browser locale, ISO YYYY-MM-DD, or DD.MM.YYYY; default browser locale). The date format SHALL apply everywhere dates are shown.
