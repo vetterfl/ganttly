@@ -32,20 +32,37 @@ export interface Task {
   /** Progress 0..100 */
   p: number;
   deps: Link[];
+  /** Id of the task's group; absent = ungrouped. */
+  g?: number;
+}
+
+/** A named, collapsible section of tasks (one level, no nesting). */
+export interface Group {
+  /** Stable id from the same counter as task ids (Project.nextId). */
+  id: number;
+  n: string;
+  collapsed: boolean;
 }
 
 export interface Project {
   title: string;
   /** Zoom factor relative to Fit: 1 = whole project fits the timeline, ≥ 1. */
   zoom: number;
+  /**
+   * Task order is an invariant (normalizeOrder in groups.ts, run after every
+   * action): all ungrouped tasks, then the tasks of groups[0], groups[1], …
+   * So array order = display order and row number = index + 1.
+   */
   tasks: Task[];
+  /** Groups in display order. */
+  groups: Group[];
   /**
    * Which days count for durations, lags and link formulas: every calendar day,
    * or Monday–Friday only. In "workdays" projects every task starts and ends
    * on a working day (enforced by schedule()). Part of the project and its link.
    */
   calendar: Calendar;
-  /** Next id to hand out; always > every task id. */
+  /** Next id to hand out; always > every task and group id. */
   nextId: number;
 }
 
@@ -83,6 +100,7 @@ export function sampleProject(today: Date): Project {
     title: "Website Relaunch",
     zoom: FIT_ZOOM,
     calendar: "days",
+    groups: [],
     nextId: 8,
     tasks: [
       mk(1, "Research & strategy", -4, 5, 0, 100),
@@ -100,7 +118,7 @@ export const UNTITLED = "Untitled Project";
 
 /** The empty project created by the New command. */
 export function emptyProject(): Project {
-  return { title: UNTITLED, zoom: FIT_ZOOM, calendar: "days", tasks: [], nextId: 1 };
+  return { title: UNTITLED, zoom: FIT_ZOOM, calendar: "days", groups: [], tasks: [], nextId: 1 };
 }
 
 /** Reducer actions. Tasks are addressed by stable id. */
@@ -108,8 +126,11 @@ export type Action =
   | { type: "load"; project: Project }
   /** Replaces everything with an empty "Untitled Project" (Fit zoom, nextId 1). */
   | { type: "newProject" }
-  /** `today` is passed in to keep the reducer pure (used when there are no tasks). */
-  | { type: "addTask"; today: string }
+  /**
+   * `today` is passed in to keep the reducer pure (used when there are no tasks).
+   * `group`: the new task's group (null/absent = ungrouped); it becomes that section's last task.
+   */
+  | { type: "addTask"; today: string; group?: number | null }
   | { type: "deleteTask"; id: number }
   | { type: "rename"; id: number; name: string }
   /** Ignored for auto-scheduled tasks. Manual: if finish < start, finish := start. Snapped onto counted days. */
@@ -122,7 +143,22 @@ export type Action =
   | { type: "setProgress"; id: number; pct: number }
   | { type: "setTitle"; title: string }
   /** Move a task to position `toIndex` (clamped to 0..n−1). Ids, links and dates are unchanged; rows renumber. */
-  | { type: "moveTask"; id: number; toIndex: number }
+  /**
+   * With `group` (null = ungrouped), the task's group is changed first; the index
+   * then applies to the flat task order, which is normalised afterwards.
+   */
+  | { type: "moveTask"; id: number; toIndex: number; group?: number | null }
+  /** Append an empty group "New group". */
+  | { type: "addGroup" }
+  /** Truncated to MAX_NAME. */
+  | { type: "renameGroup"; id: number; name: string }
+  | { type: "toggleGroup"; id: number }
+  /** Move a group (with its tasks) to position `toIndex` among the groups (clamped). */
+  | { type: "moveGroup"; id: number; toIndex: number }
+  /** withTasks: also delete its tasks (links to them are removed); otherwise its tasks become ungrouped (end of the ungrouped section). */
+  | { type: "deleteGroup"; id: number; withTasks: boolean }
+  /** Move a task into a group (null = ungrouped), as that section's last task. Unknown group → no-op. */
+  | { type: "setTaskGroup"; id: number; group: number | null }
   /** Switch the project calendar: dates are kept (snapped onto working days), durations re-counted, links rescheduled. */
   | { type: "setCalendar"; calendar: Calendar }
   /** Zoom factor; clamped by clampZoomFactor (below 1 / invalid → 1). */

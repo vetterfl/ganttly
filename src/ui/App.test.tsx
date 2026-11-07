@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { b64decode } from "../core/urlCodec";
 import { DEFAULT_SETTINGS } from "../settings/settings";
 import { lk, mkProject, mkTask, renderApp, urlProject } from "./testutil";
+import type { Project } from "../core/model";
 
 beforeEach(() => {
   localStorage.clear();
@@ -382,7 +383,7 @@ describe("zoom controls", () => {
     await user.click(btn("Zoom in"));
     expect(label()).toBe("156%");
     expect(urlProject().zoom).toBeCloseTo(1.5625, 6);
-    expect(JSON.parse(b64decode(new URLSearchParams(location.search).get("d")!)).v).toBe(5);
+    expect(JSON.parse(b64decode(new URLSearchParams(location.search).get("d")!)).v).toBe(6);
   });
 
   it("Fit and Ctrl/⌘ 0 return to Fit", async () => {
@@ -529,5 +530,175 @@ describe("move tasks up and down", () => {
     await user.keyboard("{Alt>}{ArrowDown}{/Alt}");
     expect(preds(row(4)).value).toBe("3");
     expect(urlProject().tasks.map(t => [t.id, t.s, t.e]).sort()).toEqual(before);
+  });
+});
+
+describe("groups: header rows", () => {
+  // U | Acme: A (2026-11-02..06, 50%), B (2026-11-10..12, 100%) | Globex: G1
+  const grouped = (): Project => ({
+    ...mkProject([]),
+    nextId: 30,
+    groups: [{ id: 10, n: "Acme", collapsed: false }, { id: 20, n: "Globex", collapsed: false }],
+    tasks: [
+      mkTask(1, "U", "2026-11-02", "2026-11-03"),
+      { ...mkTask(2, "A", "2026-11-02", "2026-11-06"), p: 50, g: 10 },
+      { ...mkTask(3, "B", "2026-11-10", "2026-11-12"), p: 100, g: 10 },
+      { ...mkTask(4, "G1", "2026-11-13", "2026-11-16", [lk(3)]), g: 20 },
+    ],
+  });
+  const header = (n: string) => {
+    const h = [...document.querySelectorAll<HTMLElement>(".group-row")].find(r => r.querySelector<HTMLInputElement>(".group-name-input")!.value === n);
+    if (!h) throw new Error(`no header ${n}`);
+    return h;
+  };
+  const gridOrder = () => [...document.querySelectorAll<HTMLElement>(".grid-body > .row")].map(r =>
+    r.classList.contains("group-row") ? `[${r.querySelector<HTMLInputElement>(".group-name-input")!.value}]` : `${r.querySelector(".cell-id")!.textContent}:${nameOf(r)}`);
+
+  it("shows headers in order; numbers skip headers", () => {
+    renderApp(grouped());
+    expect(gridOrder()).toEqual(["1:U", "[Acme]", "2:A", "3:B", "[Globex]", "4:G1"]);
+    expect(header("Acme").querySelector(".cell-id")!.textContent).toBe("");
+  });
+
+  it("roll-ups show the spec example", () => {
+    renderApp(grouped(), { ...DEFAULT_SETTINGS, dateFormat: "iso" });
+    const h = header("Acme");
+    expect([".c-start", ".c-fin", ".c-dur", ".c-pct"].map(c => h.querySelector(c)!.textContent)).toEqual(["2026-11-02", "2026-11-12", "11 days", "69%"]);
+  });
+
+  it("Add group appends 'New group' and focuses its name with the text selected", async () => {
+    const user = userEvent.setup();
+    renderApp(grouped());
+    await user.click(screen.getByRole("button", { name: /Add group/ }));
+    const input = header("New group").querySelector<HTMLInputElement>(".group-name-input")!;
+    expect(document.activeElement).toBe(input);
+    expect([input.selectionStart, input.selectionEnd]).toEqual([0, "New group".length]);
+    expect(gridOrder().at(-1)).toBe("[New group]");
+    await user.keyboard("Initech");
+    expect(urlProject().groups.at(-1)!.n).toBe("Initech");
+  });
+
+  it("renaming a group updates the link", async () => {
+    const user = userEvent.setup();
+    renderApp(grouped());
+    const input = header("Acme").querySelector<HTMLInputElement>(".group-name-input")!;
+    await user.clear(input);
+    await user.type(input, "Acme Corp");
+    expect(urlProject().groups[0]!.n).toBe("Acme Corp");
+  });
+
+  it("collapsing hides the group's tasks and is stored in the link", async () => {
+    const user = userEvent.setup();
+    renderApp(grouped());
+    await user.click(within(header("Acme")).getByRole("button", { name: "Collapse group Acme" }));
+    expect(gridOrder()).toEqual(["1:U", "[Acme]", "[Globex]", "4:G1"]);
+    expect(document.querySelectorAll(".tl-body .lane").length).toBe(4);
+    expect(urlProject().groups[0]!.collapsed).toBe(true);
+    expect(JSON.parse(b64decode(new URLSearchParams(location.search).get("d")!)).groups[0]).toEqual({ i: 10, n: "Acme", x: 1 });
+    await user.click(within(header("Acme")).getByRole("button", { name: "Expand group Acme" }));
+    expect(gridOrder()).toEqual(["1:U", "[Acme]", "2:A", "3:B", "[Globex]", "4:G1"]);
+  });
+
+  it("header '+' adds a task as the group's last row and focuses it; ribbon Add task uses the last group", async () => {
+    const user = userEvent.setup();
+    renderApp(grouped());
+    await user.click(within(header("Acme")).getByRole("button", { name: "Add task to Acme" }));
+    expect(gridOrder()).toEqual(["1:U", "[Acme]", "2:A", "3:B", "4:New task", "[Globex]", "5:G1"]);
+    expect(document.activeElement).toBe(row(4).querySelector(".name-input"));
+    await user.click(screen.getByRole("button", { name: "Add task" }));
+    expect(gridOrder().at(-1)).toBe("6:New task");
+    expect(urlProject().tasks.at(-1)!.g).toBe(20);
+  });
+
+  it("header actions are still there with the Predecessors column hidden", async () => {
+    const user = userEvent.setup();
+    renderApp(grouped(), { ...DEFAULT_SETTINGS, columns: { ...DEFAULT_SETTINGS.columns, preds: false } });
+    const h = header("Globex");
+    expect(within(h).getByRole("button", { name: "Add task to Globex" })).toBeTruthy();
+    await user.click(within(h).getByRole("button", { name: "Group actions for Globex" }));
+    await user.click(screen.getByRole("menuitem", { name: "Move group up" }));
+    expect(gridOrder()).toEqual(["1:U", "[Globex]", "2:G1", "[Acme]", "3:A", "4:B"]);
+    expect(urlProject().tasks.find(t => t.id === 4)!.deps).toEqual([lk(3)]); // G1 still depends on B
+  });
+});
+
+describe("groups: moving tasks and deleting groups", () => {
+  // U | Acme: A1, A2 | Globex: G1 (G1 depends on A2)
+  const grouped = (): Project => ({
+    ...mkProject([]),
+    nextId: 30,
+    groups: [{ id: 10, n: "Acme", collapsed: false }, { id: 20, n: "Globex", collapsed: false }],
+    tasks: [
+      mkTask(1, "U", "2026-11-02", "2026-11-03"),
+      { ...mkTask(2, "A1", "2026-11-04", "2026-11-05"), g: 10 },
+      { ...mkTask(3, "A2", "2026-11-06", "2026-11-09"), g: 10 },
+      { ...mkTask(4, "G1", "2026-11-10", "2026-11-12", [lk(3)]), g: 20 },
+    ],
+  });
+  const gridOrder = () => [...document.querySelectorAll<HTMLElement>(".grid-body > .row")].map(r =>
+    r.classList.contains("group-row") ? `[${r.querySelector<HTMLInputElement>(".group-name-input")!.value}]` : `${r.querySelector(".cell-id")!.textContent}:${nameOf(r)}`);
+  const headerOf = (n: string) => [...document.querySelectorAll<HTMLElement>(".group-row")].find(r => r.querySelector<HTMLInputElement>(".group-name-input")!.value === n)!;
+  const deleteDlg = () => [...document.querySelectorAll<HTMLDialogElement>("dialog.confirm-dialog")].find(d => d.textContent!.includes("Delete group?"))!;
+  const deleteGroupVia = async (user: ReturnType<typeof userEvent.setup>, n: string) => {
+    await user.click(within(headerOf(n)).getByRole("button", { name: `Group actions for ${n}` }));
+    await user.click(screen.getByRole("menuitem", { name: "Delete group…" }));
+  };
+
+  it("Group selector moves a task to the end of the chosen group", async () => {
+    const user = userEvent.setup();
+    renderApp(grouped());
+    await user.click(toggle(row(1)));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Group" }), "Globex");
+    expect(gridOrder()).toEqual(["[Acme]", "1:A1", "2:A2", "[Globex]", "3:G1", "4:U"]);
+    expect(urlProject().tasks.at(-1)!.g).toBe(20);
+    expect(preds(row(3)).value).toBe("2"); // G1 → A2, renumbered
+  });
+
+  it("Alt+↑ on the first task of a group makes it the last ungrouped task, focus kept", async () => {
+    const user = userEvent.setup();
+    renderApp(grouped());
+    row(2).querySelector<HTMLInputElement>(".name-input")!.focus();
+    await user.keyboard("{Alt>}{ArrowUp}{/Alt}");
+    expect(gridOrder()).toEqual(["1:U", "2:A1", "[Acme]", "3:A2", "[Globex]", "4:G1"]);
+    expect(document.activeElement).toBe(row(2).querySelector(".name-input"));
+    await user.keyboard("{Alt>}{ArrowDown}{/Alt}");
+    expect(gridOrder()).toEqual(["1:U", "[Acme]", "2:A1", "3:A2", "[Globex]", "4:G1"]);
+  });
+
+  it("Move up is disabled only for the very first task", async () => {
+    const user = userEvent.setup();
+    renderApp(grouped());
+    await user.click(toggle(row(2)));
+    expect((screen.getByRole("button", { name: "Move task up" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("deleting a group and keeping its tasks ungroups them at the end of the ungrouped section", async () => {
+    const user = userEvent.setup();
+    renderApp(grouped());
+    await deleteGroupVia(user, "Acme");
+    const dlg = deleteDlg();
+    expect(dlg.open).toBe(true);
+    expect(dlg.textContent).toContain("2 tasks");
+    await user.click(screen.getByRole("button", { name: "Keep tasks (ungroup)" }));
+    expect(gridOrder()).toEqual(["1:U", "2:A1", "3:A2", "[Globex]", "4:G1"]);
+    expect(urlProject().tasks.find(t => t.id === 4)!.deps).toEqual([lk(3)]);
+  });
+
+  it("deleting a group with its tasks removes them and their links; successors keep their dates", async () => {
+    const user = userEvent.setup();
+    renderApp(grouped());
+    await deleteGroupVia(user, "Acme");
+    await user.click(screen.getByRole("button", { name: "Delete group and 2 tasks" }));
+    expect(gridOrder()).toEqual(["1:U", "[Globex]", "2:G1"]);
+    const g1 = urlProject().tasks.find(t => t.id === 4)!;
+    expect([g1.deps, g1.s, g1.e]).toEqual([[], "2026-11-10", "2026-11-12"]);
+  });
+
+  it("an empty group is deleted without asking", async () => {
+    const user = userEvent.setup();
+    renderApp({ ...grouped(), groups: [...grouped().groups, { id: 25, n: "Empty", collapsed: false }] });
+    await deleteGroupVia(user, "Empty");
+    expect(deleteDlg().open).toBe(false);
+    expect(urlProject().groups.map(g => g.n)).toEqual(["Acme", "Globex"]);
   });
 });

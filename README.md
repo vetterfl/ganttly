@@ -8,6 +8,7 @@ MS Project–style Gantt charts in the browser — with task dependencies, prede
 
 - **Task table + timeline** side by side, row-aligned like MS Project: ID, Task Name, Duration, Start, Finish, % Complete, Predecessors. Per-task colour, progress and delete live in a collapsible detail row (▸).
 - **Resizable columns:** drag the right edge of a column header, double-click it to fit the widest entry, or focus it and use ←/→ (Home resets). Values that don't fit end in "…" and show in full on hover.
+- **Groups:** *Add group* creates a section header (say, one per company). Each header shows the group's overall Start, Finish, Duration (earliest start to latest finish) and duration-weighted % Complete, plus a summary bar in the timeline; the chevron collapses it (stored in the link). Put tasks into a group with the header's **+**, the *Group* selector in a task's options, Alt+↑/↓ across a header, or by dragging. The header's **⋯** menu moves or deletes a group (you choose whether its tasks go too). Tasks stay numbered 1…n across groups.
 - **Reorder tasks:** drag a row by the grip in its ID cell (mouse or touch; Escape cancels), press Alt+↑ / Alt+↓ in a row, or use *Up* / *Down* in the row's options. Rows renumber; predecessor links follow their tasks.
 - **New project:** *New* in the File group starts an empty chart (asking first if the current one has tasks). The browser's Back button brings the previous chart back.
 - **Dependencies** of all four MS Project types — finish-to-start, start-to-start, finish-to-finish, start-to-finish — with lag or lead in days or weeks, drawn as arrows in the timeline.
@@ -15,7 +16,7 @@ MS Project–style Gantt charts in the browser — with task dependencies, prede
 - **Calendar or working days:** in *Settings → Project*, choose whether the project is planned in calendar days or in working days (Mon–Fri). In a working-day project durations and lags skip weekends, a week (`1W`) is 5 days, tasks always start and end on weekdays, and durations read "5 wdays". The choice belongs to the project and travels with its link; switching keeps your dates.
 - **Zoom that fits any project:** *Fit* (100%) shows the whole project, however long, in the visible timeline. Zoom in from there in fine steps with − / + (×1.25), the zoom slider, Ctrl/⌘ + / −, or Ctrl/⌘ + mouse wheel / trackpad pinch over the chart (the date under the pointer stays put), up to 120 px per day. *Fit* or Ctrl/⌘ 0 goes back. The timescale adapts: days → Mondays → calendar weeks (KW/W) → months → quarters.
 - **Drag to pan:** grab the timeline with the left mouse button (or anywhere with the middle button) and drag to move around the chart, horizontally and vertically.
-- **Shareable links:** *Copy link* puts the entire chart (title, zoom, tasks, links) into a URL. Older Ganttly links keep working; links from before the fit-relative zoom open at *Fit*.
+- **Shareable links:** *Copy link* puts the entire chart (title, zoom, calendar, groups, tasks, links) into a URL. Older Ganttly links keep working; links from before the fit-relative zoom open at *Fit*.
 - **View settings** (per browser, never part of the link): German or English link notation, date format, row density, visible columns and their widths, and toggles for arrows, weekend shading, today marker and progress.
 - Bold colour palette, landscape print layout, works on phones.
 

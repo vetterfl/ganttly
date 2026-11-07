@@ -5,6 +5,7 @@ import {
 import { ISO_RE, iso, parseDate } from "./dates";
 import { calendarOps, toCalendar } from "./calendar";
 import { schedule, wouldCreateCycle } from "./schedule";
+import { normalizeOrder } from "./groups";
 
 const validIso = (s: unknown): s is string =>
   typeof s === "string" && ISO_RE.test(s) && iso(parseDate(s)) === s;
@@ -25,7 +26,34 @@ function edit(p: Project, id: number, fn: (t: Task) => Task | null): Project {
   return withTasks(p, tasks);
 }
 
+/** Copy of `t` in group `g` (undefined/null = ungrouped). */
+function withGroup(t: Task, g: number | null | undefined): Task {
+  if ((g ?? undefined) === t.g) return t;
+  if (g === null || g === undefined) {
+    const rest = { ...t };
+    delete rest.g;
+    return rest;
+  }
+  return { ...t, g };
+}
+
+/** Remove tasks and every link pointing at them; successors left without links become manual. */
+function deleteTasks(p: Project, ids: ReadonlySet<number>): Project {
+  const tasks = p.tasks
+    .filter((t) => !ids.has(t.id))
+    .map((t) => (t.deps.some((l) => ids.has(l.pred)) ? { ...t, deps: t.deps.filter((l) => !ids.has(l.pred)) } : t));
+  return withTasks(p, tasks);
+}
+
+const groupExists = (p: Project, g: number | null | undefined) => g === null || g === undefined || p.groups.some((x) => x.id === g);
+
+/** Applies an action, then enforces the task-order invariant (see normalizeOrder). */
 export function reducer(project: Project, action: Action): Project {
+  const next = apply(project, action);
+  return next === project ? project : normalizeOrder(next);
+}
+
+function apply(project: Project, action: Action): Project {
   switch (action.type) {
     case "load":
       return { ...action.project, tasks: schedule(action.project.tasks, action.project.calendar) };
@@ -34,29 +62,22 @@ export function reducer(project: Project, action: Action): Project {
       return emptyProject();
 
     case "addTask": {
-      if (!validIso(action.today)) return project;
+      if (!validIso(action.today) || !groupExists(project, action.group)) return project;
       const ops = calendarOps(project.calendar);
       let last = action.today;
       for (const t of project.tasks) if (t.e > last) last = t.e;
       // The day after the latest finish (or today, when there are no tasks), in project days.
       const si = project.tasks.length ? ops.finishIdx(last) + 1 : ops.startIdx(last);
-      const task: Task = {
+      const task: Task = withGroup({
         id: project.nextId, n: "New task", s: ops.toIso(si), e: ops.toIso(si + 4),
         c: project.tasks.length % PALETTE.length, p: 0, deps: [],
-      };
+      }, action.group);
       return withTasks(project, [...project.tasks, task], { nextId: project.nextId + 1 });
     }
 
     case "deleteTask": {
       if (!project.tasks.some((t) => t.id === action.id)) return project;
-      const tasks = project.tasks
-        .filter((t) => t.id !== action.id)
-        .map((t) =>
-          t.deps.some((l) => l.pred === action.id)
-            ? { ...t, deps: t.deps.filter((l) => l.pred !== action.id) }
-            : t,
-        );
-      return withTasks(project, tasks);
+      return deleteTasks(project, new Set([action.id]));
     }
 
     case "rename":
@@ -99,12 +120,63 @@ export function reducer(project: Project, action: Action): Project {
 
     case "moveTask": {
       const from = project.tasks.findIndex((t) => t.id === action.id);
-      if (from < 0 || !Number.isFinite(action.toIndex)) return project;
+      if (from < 0 || !Number.isFinite(action.toIndex) || !groupExists(project, action.group)) return project;
       const to = Math.min(Math.max(Math.trunc(action.toIndex), 0), project.tasks.length - 1);
-      if (to === from) return project;
+      const cur = project.tasks[from] as Task;
+      const moved = action.group === undefined ? cur : withGroup(cur, action.group);
+      if (to === from && moved === cur) return project;
       const tasks = project.tasks.slice();
-      const [t] = tasks.splice(from, 1);
-      tasks.splice(to, 0, t as Task);
+      tasks.splice(from, 1);
+      tasks.splice(to, 0, moved);
+      return withTasks(project, tasks);
+    }
+
+    case "addGroup": {
+      const group = { id: project.nextId, n: "New group", collapsed: false };
+      return { ...project, groups: [...project.groups, group], nextId: project.nextId + 1 };
+    }
+
+    case "renameGroup": {
+      const n = action.name.slice(0, MAX_NAME);
+      if (!project.groups.some((g) => g.id === action.id && g.n !== n)) return project;
+      return { ...project, groups: project.groups.map((g) => (g.id === action.id ? { ...g, n } : g)) };
+    }
+
+    case "toggleGroup":
+      if (!project.groups.some((g) => g.id === action.id)) return project;
+      return { ...project, groups: project.groups.map((g) => (g.id === action.id ? { ...g, collapsed: !g.collapsed } : g)) };
+
+    case "moveGroup": {
+      const from = project.groups.findIndex((g) => g.id === action.id);
+      if (from < 0 || !Number.isFinite(action.toIndex)) return project;
+      const to = Math.min(Math.max(Math.trunc(action.toIndex), 0), project.groups.length - 1);
+      if (to === from) return project;
+      const groups = project.groups.slice();
+      const [g] = groups.splice(from, 1);
+      groups.splice(to, 0, g!);
+      return { ...project, groups };
+    }
+
+    case "deleteGroup": {
+      if (!project.groups.some((g) => g.id === action.id)) return project;
+      const groups = project.groups.filter((g) => g.id !== action.id);
+      if (action.withTasks) {
+        const ids = new Set(project.tasks.filter((t) => t.g === action.id).map((t) => t.id));
+        return deleteTasks({ ...project, groups }, ids);
+      }
+      // Former members keep their relative order and, being later in the array
+      // than every ungrouped task, land at the end of the ungrouped section.
+      return { ...project, groups, tasks: project.tasks.map((t) => (t.g === action.id ? withGroup(t, null) : t)) };
+    }
+
+    case "setTaskGroup": {
+      const i = project.tasks.findIndex((t) => t.id === action.id);
+      if (i < 0 || !groupExists(project, action.group)) return project;
+      const t = project.tasks[i] as Task;
+      if ((action.group ?? undefined) === t.g) return project;
+      // Re-append so the stable partition puts it last in its new section.
+      const tasks = project.tasks.filter((x) => x.id !== action.id);
+      tasks.push(withGroup(t, action.group));
       return withTasks(project, tasks);
     }
 

@@ -7,7 +7,7 @@ Defines the overall page shell (command ribbon, full-width grid and timeline spl
 ## Requirements
 
 ### Requirement: Command ribbon
-The page SHALL have a top title bar showing the app name and an editable project title. Below it, a command ribbon SHALL group the commands under labelled groups: Task (Add task), Share (Copy link), View (zoom out, zoom slider, zoom label, zoom in, Fit) and File (New, Print).
+The page SHALL have a top title bar showing the app name and an editable project title. Below it, a command ribbon SHALL group the commands under labelled groups: Task (Add task, Add group), Share (Copy link), View (zoom out, zoom slider, zoom label, zoom in, Fit) and File (New, Print).
 
 #### Scenario: Ribbon groups
 - **WHEN** the page loads

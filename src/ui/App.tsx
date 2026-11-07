@@ -8,10 +8,11 @@ import { formatDateObj } from "./format";
 import { TaskGrid } from "./grid/TaskGrid";
 import { useElementWidth, useRowMetrics } from "./hooks";
 import { useDragPan } from "./useDragPan";
-import { slotY, useRowDrag } from "./grid/useRowDrag";
-import { laneTops } from "./timeline/geometry";
+import { slotY, useRowDrag, type DragItem } from "./grid/useRowDrag";
+import { rowsHeight, rowTops } from "./timeline/geometry";
+import { displayRows, groupDropIndex, snapGroupSlot, taskDropTarget } from "../core/groups";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { AddTaskIcon, FitIcon, LinkIcon, NewFileIcon, PrintIcon, SettingsIcon } from "./icons";
+import { AddGroupIcon, AddTaskIcon, FitIcon, LinkIcon, NewFileIcon, PrintIcon, SettingsIcon } from "./icons";
 import { SettingsDialog } from "./SettingsDialog";
 import { Timeline } from "./timeline/Timeline";
 import { factorToSlider, SLIDER_MAX, sliderToFactor, useZoom } from "./timeline/useZoom";
@@ -82,32 +83,75 @@ export function App() {
   }, []);
   useEffect(() => { document.title = (title || "Untitled") + " — Ganttly"; }, [title]);
 
-  // Focus + select the name of a just-added task.
+  // Focus + select the name of a just-added task or group.
   useEffect(() => {
     if (focusTaskId.current === null) return;
-    const el = document.querySelector<HTMLInputElement>(`.row[data-task-id="${focusTaskId.current}"] .name-input`);
+    const id = focusTaskId.current;
+    const el = document.querySelector<HTMLInputElement>(
+      `.row[data-task-id="${id}"] .name-input, .group-row[data-group-id="${id}"] .group-name-input`,
+    );
     focusTaskId.current = null;
     if (el) { el.focus(); el.select(); }
-  }, [tasks]);
+  }, [project]);
 
   const availPx = Math.max(0, workspaceW - gridW - 2);
   const onZoom = useCallback((z: number) => dispatch({ type: "setZoom", zoom: z }), []);
   useDragPan(workspaceRef);
-  const onMoveTask = useCallback((id: number, toIndex: number) => dispatch({ type: "moveTask", id, toIndex }), []);
-  const rowDrag = useRowDrag({ tasks, expanded, rowH: metrics.rowH, detailH: metrics.detailH, workspaceRef, onMove: onMoveTask });
+  // One list of display rows (tasks and group headers) drives grid, timeline, arrows and dragging.
+  const rows = useMemo(() => displayRows(project, expanded), [project, expanded]);
+  // Drops: a task joins the section of the gap it's dropped in (see taskDropTarget);
+  // a group may only land between groups and moves with all its tasks.
+  const onDrop = useCallback((item: DragItem, slot: number) => {
+    if (item.kind === "task") {
+      const target = taskDropTarget(project, rows, item.id, slot);
+      if (target) dispatch({ type: "moveTask", id: item.id, ...target });
+    } else {
+      const to = groupDropIndex(project, rows, item.id, slot);
+      if (to !== null) dispatch({ type: "moveGroup", id: item.id, toIndex: to });
+    }
+  }, [project, rows]);
+  const snap = useCallback((item: DragItem, slot: number) => (item.kind === "group" ? snapGroupSlot(rows, slot) : slot), [rows]);
+  const rowDrag = useRowDrag({ rows, rowH: metrics.rowH, detailH: metrics.detailH, workspaceRef, snap, onDrop });
   const dropY = useMemo(() => {
     if (!rowDrag.drag) return null;
-    const tops = laneTops(tasks, expanded, metrics.rowH, metrics.detailH);
-    const last = tasks.at(-1);
-    const total = last ? (tops.at(-1) ?? 0) + metrics.rowH + (expanded.has(last.id) ? metrics.detailH : 0) : 0;
-    return slotY(rowDrag.drag.slot, tops, total);
-  }, [rowDrag.drag, tasks, expanded, metrics]);
-  const zoomApi = useZoom({ stored: zoom, onChange: onZoom, tasks, availPx, today, workspaceRef, gridW });
+    return slotY(rowDrag.drag.slot, rowTops(rows, metrics.rowH, metrics.detailH), rowsHeight(rows, metrics.rowH, metrics.detailH));
+  }, [rowDrag.drag, rows, metrics]);
+  // Fit and the timeline range must make room for every bar label: tasks (even
+  // in collapsed groups) and the group summary bars.
+  const spans = useMemo(() => [
+    ...tasks,
+    ...rows.flatMap(r => (r.kind === "group" && r.rollup ? [{ s: r.rollup.s, e: r.rollup.e, n: r.group.n }] : [])),
+  ], [tasks, rows]);
+  const zoomApi = useZoom({ stored: zoom, onChange: onZoom, tasks: spans, availPx, today, workspaceRef, gridW });
 
-  const addTask = () => {
+  /** Add a task (to `group`, or ungrouped); a collapsed target group is expanded so the task is visible. */
+  const addTaskTo = useCallback((group: number | null) => {
+    const g = project.groups.find(x => x.id === group);
+    if (g?.collapsed) dispatch({ type: "toggleGroup", id: g.id });
     focusTaskId.current = project.nextId;
-    dispatch({ type: "addTask", today: iso(startOfToday()) });
+    dispatch({ type: "addTask", today: iso(startOfToday()), group });
+  }, [project.groups, project.nextId]);
+  // The ribbon's Add task appends to the last group when there are groups.
+  const addTask = () => addTaskTo(project.groups.at(-1)?.id ?? null);
+  const addGroup = () => {
+    focusTaskId.current = project.nextId;
+    dispatch({ type: "addGroup" });
   };
+
+  // Deleting a group with tasks asks whether to delete them too or keep them ungrouped.
+  const [deleteGroupId, setDeleteGroupId] = useState<number | null>(null);
+  const requestDeleteGroup = useCallback((id: number) => {
+    if (project.tasks.some(t => t.g === id)) setDeleteGroupId(id);
+    else dispatch({ type: "deleteGroup", id, withTasks: false });
+  }, [project.tasks]);
+  const deleteGroup = (withTasks: boolean) => {
+    if (deleteGroupId === null) return;
+    dispatch({ type: "deleteGroup", id: deleteGroupId, withTasks });
+    toast(withTasks ? "Group and its tasks deleted" : "Group deleted, tasks kept");
+    setDeleteGroupId(null);
+  };
+  const delGroup = project.groups.find(g => g.id === deleteGroupId);
+  const delCount = project.tasks.filter(t => t.g === deleteGroupId).length;
   const newProject = () => {
     setConfirmNew(false);
     history.pushState(null, "", location.pathname + encodeProject(emptyProject()));
@@ -163,7 +207,8 @@ export function App() {
 
       <nav className="ribbon" aria-label="Commands">
         <RibbonGroup caption="Task">
-          <button type="button" className="btn" onClick={addTask} title="Add a new task"><AddTaskIcon />Add task</button>
+          <button type="button" className="btn" onClick={addTask} title="Add a new task (to the last group, if there are groups)"><AddTaskIcon />Add task</button>
+          <button type="button" className="btn" onClick={addGroup} title="Add a group (section header)"><AddGroupIcon />Add group</button>
         </RibbonGroup>
         <RibbonGroup caption="Share">
           <button type="button" className="btn" onClick={copyLink} title="Copy a shareable link with all chart data"><LinkIcon />Copy link</button>
@@ -197,9 +242,9 @@ export function App() {
 
       <div className="workspace" ref={workspaceRef}>
         <div className="split">
-          <TaskGrid ref={gridRef} tasks={tasks} expanded={expanded} onToggle={toggle} onDelete={remove} dispatch={dispatch} calendar={project.calendar}
-            dragId={rowDrag.drag?.id ?? null} dropY={dropY} onGripDown={rowDrag.onGripDown} />
-          <Timeline tasks={tasks} expanded={expanded} w={zoomApi.w} today={today}
+          <TaskGrid ref={gridRef} tasks={tasks} rows={rows} groups={project.groups} onToggle={toggle} onDelete={remove} dispatch={dispatch} calendar={project.calendar}
+            drag={rowDrag.drag} dropY={dropY} onAddTaskToGroup={addTaskTo} onDeleteGroup={requestDeleteGroup} onGripDown={rowDrag.onGripDown} />
+          <Timeline spans={spans} rows={rows} w={zoomApi.w} today={today}
             availPx={availPx} metrics={metrics} settings={settings} dropY={dropY} />
         </div>
       </div>
@@ -210,6 +255,15 @@ export function App() {
         message={<>This replaces “{title || "Untitled Project"}” and its {tasks.length} task{tasks.length === 1 ? "" : "s"} with an empty project. You can get it back with the browser’s Back button.</>}
         actions={[{ label: "New project", danger: true, onConfirm: newProject }]}
         onCancel={() => setConfirmNew(false)}
+      />
+      <ConfirmDialog
+        open={deleteGroupId !== null} title="Delete group?"
+        message={<>“{delGroup?.n || "Unnamed group"}” contains {delCount} task{delCount === 1 ? "" : "s"}. Delete them too, or keep them as ungrouped tasks?</>}
+        actions={[
+          { label: "Keep tasks (ungroup)", onConfirm: () => deleteGroup(false) },
+          { label: `Delete group and ${delCount} task${delCount === 1 ? "" : "s"}`, danger: true, onConfirm: () => deleteGroup(true) },
+        ]}
+        onCancel={() => setDeleteGroupId(null)}
       />
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} returnFocusRef={settingsBtn}
         calendar={project.calendar} onCalendar={calendar => dispatch({ type: "setCalendar", calendar })} />

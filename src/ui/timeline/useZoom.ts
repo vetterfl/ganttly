@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, type RefObject } from "react";
-import { FIT_ZOOM, MAX_DAY_PX, ZOOM_STEP, type Task } from "../../core/model";
-import { fitDayWidth } from "./geometry";
+import { FIT_ZOOM, MAX_DAY_PX, ZOOM_STEP } from "../../core/model";
+import { fitDayWidth, type Span } from "./geometry";
 import { labelWidth } from "./measure";
 
 /** Wheel delta (px) → zoom exponent. */
@@ -37,7 +37,8 @@ export interface ZoomApi {
 export function useZoom({ stored, onChange, tasks, availPx, today, workspaceRef, gridW }: {
   stored: number;
   onChange: (z: number) => void;
-  tasks: Task[];
+  /** Everything drawn with a label: tasks and group summary bars. */
+  tasks: readonly Span[];
   availPx: number;
   today: Date;
   workspaceRef: RefObject<HTMLElement | null>;

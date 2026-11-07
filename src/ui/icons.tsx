@@ -28,3 +28,9 @@ export const NewFileIcon = () => (
 export const FitIcon = () => (
   <svg viewBox="0 0 24 24" strokeWidth={2.2} {...base} aria-hidden="true"><path d="M3 12h18M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3M3 5v14M21 5v14" /></svg>
 );
+export const MoreIcon = () => (
+  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" /></svg>
+);
+export const AddGroupIcon = () => (
+  <svg viewBox="0 0 24 24" strokeWidth={2.2} {...base} aria-hidden="true"><path d="M3 5h12M3 5v14M7 10h10M7 15h7M19 14v6M16 17h6" /></svg>
+);

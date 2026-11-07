@@ -1,10 +1,11 @@
 import {
-  LINK_TYPES, MAX_DURATION, PALETTE, FIT_ZOOM, clampZoomFactor,
-  type Link, type Project, type Task,
+  LINK_TYPES, MAX_DURATION, MAX_NAME, PALETTE, FIT_ZOOM, clampZoomFactor,
+  type Group, type Link, type Project, type Task,
 } from "./model";
 import { ISO_RE, iso } from "./dates";
 import type { Calendar } from "./calendar";
 import { schedule, wouldCreateCycle } from "./schedule";
+import { normalizeOrder } from "./groups";
 
 
 export function b64encode(str: string): string {
@@ -40,15 +41,17 @@ export function sanitizeTask(f: Fields, today: Date): Pick<Task, "n" | "s" | "e"
 
 export function encodeProject(p: Project): string {
   const payload = JSON.stringify({
-    v: 5,
+    v: 6,
     t: p.title,
     zf: p.zoom,
     // Calendar: 1 = working days (Mon–Fri); omitted = calendar days.
     ...(p.calendar === "workdays" ? { cal: 1 } : {}),
     n: p.nextId,
+    groups: p.groups.map((g) => (g.collapsed ? { i: g.id, n: g.n, x: 1 } : { i: g.id, n: g.n })),
     tasks: p.tasks.map((t) => {
       const o: Record<string, unknown> = { i: t.id, n: t.n, s: t.s, e: t.e, c: t.c, p: t.p };
       if (t.deps.length) o.d = t.deps.map((l) => [l.pred, LINK_TYPES.indexOf(l.type), l.lag]);
+      if (t.g !== undefined) o.g = t.g;
       return o;
     }),
   });
@@ -57,8 +60,13 @@ export function encodeProject(p: Project): string {
 
 const isObj = (x: unknown): x is Record<string, unknown> => typeof x === "object" && x !== null;
 
-/** v3–v5 share the task/link encoding; they differ in how zoom is stored and whether a calendar is. */
-function decodeLinked(o: Record<string, unknown>, rawTasks: unknown[], today: Date, zoom: number, calendar: Calendar): Project {
+/**
+ * v3–v6 share the task/link encoding; they differ in how zoom is stored and
+ * whether a calendar (v5+) and groups (v6) are present.
+ */
+function decodeLinked(
+  o: Record<string, unknown>, rawTasks: unknown[], today: Date, zoom: number, calendar: Calendar, rawGroups: unknown[] = [],
+): Project {
   const seen = new Set<number>();
   const ids: (number | null)[] = rawTasks.map((r) => {
     const i = isObj(r) ? r.i : undefined;
@@ -101,16 +109,35 @@ function decodeLinked(o: Record<string, unknown>, rawTasks: unknown[], today: Da
     tasks[k] = { ...t, deps: accepted };
   }
 
+  // Groups (v6): ids must be unique positive integers that don't collide with
+  // task ids; others get a fresh id. Tasks refer to a group by its link id.
+  const used = new Set<number>();
+  const rawIds = rawGroups.map((r) => (isObj(r) ? r.i : undefined));
+  for (const i of rawIds) {
+    if (typeof i === "number" && Number.isSafeInteger(i) && i > 0 && !idSet.has(i)) used.add(i);
+  }
+  let freshAll = Math.max(fresh, ...used);
+  const taken = new Set<number>();
+  const linkToGroup = new Map<unknown, number>();
+  const groups: Group[] = rawGroups.map((r, k) => {
+    const rec = isObj(r) ? r : {};
+    const raw = rawIds[k];
+    const id = typeof raw === "number" && used.has(raw) && !taken.has(raw) ? raw : ++freshAll;
+    taken.add(id);
+    if (raw !== undefined && !linkToGroup.has(raw)) linkToGroup.set(raw, id);
+    return { id, n: typeof rec.n === "string" ? rec.n.slice(0, MAX_NAME) : "Group", collapsed: rec.x === 1 };
+  });
+  rawTasks.forEach((r, k) => {
+    const gid = isObj(r) ? linkToGroup.get(r.g) : undefined;
+    if (gid !== undefined) tasks[k] = { ...(tasks[k] as Task), g: gid };
+  });
+
   const nRaw = o.n;
-  const nextId = Math.max(typeof nRaw === "number" && Number.isSafeInteger(nRaw) ? nRaw : 0, Math.max(maxId, fresh) + 1);
-  return {
-    title: String(o.t || "My Project"),
-    zoom,
-    calendar,
-    nextId,
-    // schedule() also moves untrusted weekend dates onto working days.
-    tasks: schedule(tasks, calendar),
-  };
+  const nextId = Math.max(typeof nRaw === "number" && Number.isSafeInteger(nRaw) ? nRaw : 0, Math.max(maxId, freshAll) + 1);
+  // Order invariant first (ungrouped, then groups), then schedule — which also
+  // moves untrusted weekend dates onto working days.
+  const p = normalizeOrder({ title: String(o.t || "My Project"), zoom, calendar, groups, nextId, tasks });
+  return { ...p, tasks: schedule(p.tasks, calendar) };
 }
 
 export function decodeProject(search: string, today: Date): Project | null {
@@ -121,6 +148,10 @@ export function decodeProject(search: string, today: Date): Project | null {
   try {
     const o: unknown = JSON.parse(b64decode(raw));
     if (isObj(o)) {
+      if (o.v === 6 && Array.isArray(o.tasks)) {
+        return decodeLinked(o, o.tasks, today, clampZoomFactor(o.zf), o.cal === 1 ? "workdays" : "days",
+          Array.isArray(o.groups) ? o.groups : []);
+      }
       if (o.v === 5 && Array.isArray(o.tasks)) {
         return decodeLinked(o, o.tasks, today, clampZoomFactor(o.zf), o.cal === 1 ? "workdays" : "days");
       }
@@ -131,7 +162,7 @@ export function decodeProject(search: string, today: Date): Project | null {
         const tasks: Task[] = o.tasks.map((r: unknown, i: number) => ({
           id: i + 1, ...sanitizeTask(isObj(r) ? r : {}, today), deps: [],
         }));
-        return { title: String(o.t || "My Project"), zoom: FIT_ZOOM, calendar: "days", nextId: tasks.length + 1, tasks };
+        return { title: String(o.t || "My Project"), zoom: FIT_ZOOM, calendar: "days", groups: [], nextId: tasks.length + 1, tasks };
       }
     }
   } catch {
@@ -147,7 +178,7 @@ export function decodeProject(search: string, today: Date): Project | null {
       ...sanitizeTask({ n: f[0], s: f[1], e: f[2], c: f[3], p: f[4] }, today),
       deps: [],
     }));
-    return { title: params.get("t") || "My Project", zoom: FIT_ZOOM, calendar: "days", nextId: tasks.length + 1, tasks };
+    return { title: params.get("t") || "My Project", zoom: FIT_ZOOM, calendar: "days", groups: [], nextId: tasks.length + 1, tasks };
   } catch {
     return null;
   }

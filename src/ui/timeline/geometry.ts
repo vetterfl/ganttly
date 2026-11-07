@@ -2,6 +2,9 @@
 import { addDays, diffDays, parseDate } from "../../core/dates";
 import { MAX_DAY_PX, type Task } from "../../core/model";
 
+/** Something drawn as a bar with a label to its right: a task, or a group's summary bar. */
+export interface Span { s: string; e: string; n: string }
+
 /** Space a bar label needs right of its bar: gap + label + margin (matches computeRange). */
 const LABEL_ROOM = 12 + 12;
 /** Day width used before the timeline has been measured. */
@@ -10,7 +13,7 @@ export const FALLBACK_DAY_PX = 34;
 const MIN_DAY_PX = 0.01;
 
 /** Padded first/last day: tasks −2/+3 days, or around today when there are none. */
-function paddedSpan(tasks: Task[], today: Date): { min: Date; max: Date } {
+function paddedSpan(tasks: readonly Span[], today: Date): { min: Date; max: Date } {
   if (!tasks.length) return { min: addDays(today, -2), max: addDays(today, 3) };
   let min = parseDate(tasks[0]!.s), max = parseDate(tasks[0]!.e);
   for (const t of tasks) {
@@ -22,7 +25,7 @@ function paddedSpan(tasks: Task[], today: Date): { min: Date; max: Date } {
 }
 
 /** Pixels needed at day width w: the padded span, and every bar plus its label. */
-function neededPx(tasks: Task[], min: Date, spanDays: number, w: number, labelWidth: (s: string) => number): number {
+function neededPx(tasks: readonly Span[], min: Date, spanDays: number, w: number, labelWidth: (s: string) => number): number {
   let need = spanDays * w;
   for (const t of tasks) need = Math.max(need, (diffDays(t.e, min) + 1) * w + LABEL_ROOM + labelWidth(t.n));
   return need;
@@ -33,7 +36,7 @@ function neededPx(tasks: Task[], min: Date, spanDays: number, w: number, labelWi
  * `availPx` (zoom factor 1 = "Fit"). Capped at MAX_DAY_PX; FALLBACK_DAY_PX
  * while `availPx` is unknown (0).
  */
-export function fitDayWidth(tasks: Task[], availPx: number, labelWidth: (s: string) => number, today: Date): number {
+export function fitDayWidth(tasks: readonly Span[], availPx: number, labelWidth: (s: string) => number, today: Date): number {
   if (!(availPx > 0)) return FALLBACK_DAY_PX;
   const { min, max } = paddedSpan(tasks, today);
   const span = diffDays(max, min) + 1;
@@ -63,7 +66,7 @@ export interface Range {
  * overflowing it by a partial day.
  */
 export function computeRange(
-  tasks: Task[], w: number, availPx: number, today: Date, labelWidth: (s: string) => number,
+  tasks: readonly Span[], w: number, availPx: number, today: Date, labelWidth: (s: string) => number,
 ): Range {
   const { min, max } = paddedSpan(tasks, today);
   const needPx = neededPx(tasks, min, diffDays(max, min) + 1, w, labelWidth);
@@ -78,7 +81,7 @@ export const dayToX = (date: string | Date, min: Date, w: number): number => dif
 export const MIN_BAR_PX = 2;
 
 /** Bar box for a task (1px inset on both sides, matching the rendered bar; at least MIN_BAR_PX wide). */
-export function barBox(t: Task, min: Date, w: number): { left: number; right: number; width: number } {
+export function barBox(t: { s: string; e: string }, min: Date, w: number): { left: number; right: number; width: number } {
   const x0 = dayToX(t.s, min, w);
   const span = (diffDays(t.e, t.s) + 1) * w;
   const inset = Math.min(1, Math.max(0, (span - MIN_BAR_PX) / 2));
@@ -86,16 +89,30 @@ export function barBox(t: Task, min: Date, w: number): { left: number; right: nu
   return { left: x0 + inset, right: x0 + inset + width, width };
 }
 
+/** Anything laid out as a row: a task row (maybe with an open detail strip) or a group header. */
+export type RowLike = { kind: "task"; detail: boolean } | { kind: "group" };
+const rowHeight = (r: RowLike, rowH: number, detailH: number) => rowH + (r.kind === "task" && r.detail ? detailH : 0);
+
 /**
- * Top y of each task's lane (in task order), given which tasks have an open
- * detail strip (each adds a spacer lane of detailH after its own lane).
+ * Top y of each display row's lane. Every row is rowH high; a task row with an
+ * open detail strip adds a spacer of detailH after it. The grid, timeline,
+ * arrows and row dragging all use this, so they can't disagree.
  */
-export function laneTops(tasks: Task[], expanded: ReadonlySet<number>, rowH: number, detailH: number): number[] {
+export function rowTops(rows: readonly RowLike[], rowH: number, detailH: number): number[] {
   const tops: number[] = [];
   let y = 0;
-  for (const t of tasks) {
+  for (const r of rows) {
     tops.push(y);
-    y += rowH + (expanded.has(t.id) ? detailH : 0);
+    y += rowHeight(r, rowH, detailH);
   }
   return tops;
+}
+
+/** Total height of all rows. */
+export const rowsHeight = (rows: readonly RowLike[], rowH: number, detailH: number): number =>
+  rows.reduce((h, r) => h + rowHeight(r, rowH, detailH), 0);
+
+/** rowTops for a plain task list (no groups), `expanded` = tasks with an open detail strip. */
+export function laneTops(tasks: Task[], expanded: ReadonlySet<number>, rowH: number, detailH: number): number[] {
+  return rowTops(tasks.map(t => ({ kind: "task" as const, detail: expanded.has(t.id) })), rowH, detailH);
 }

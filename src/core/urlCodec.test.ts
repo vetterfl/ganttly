@@ -50,7 +50,7 @@ describe("garbage", () => {
 });
 
 const sample = (): Project => ({
-  title: "Hello Ünï", zoom: 2.5, calendar: "days", nextId: 10,
+  title: "Hello Ünï", zoom: 2.5, calendar: "days", groups: [], nextId: 10,
   tasks: [
     mk(1, "2026-11-01", "2026-11-05", [], "A"),
     mk(4, "2026-11-06", "2026-11-08", [lk(1)], "B"),
@@ -68,7 +68,7 @@ describe("v5", () => {
   });
   it("omits d when empty and uses expected shape", () => {
     const json = JSON.parse(b64decode(encodeProject(scheduled()).slice(3)));
-    expect(json.v).toBe(5);
+    expect(json.v).toBe(6);
     expect("cal" in json).toBe(false); // calendar days are the default
     expect(json.zf).toBe(2.5);
     expect("z" in json).toBe(false);
@@ -146,7 +146,7 @@ describe("calendar (v5)", () => {
     expect(p.calendar).toBe("workdays");
     expect([p.tasks[1]!.s, p.tasks[1]!.e]).toEqual(["2026-11-18", "2026-11-20"]); // FS+2 working days
     const json = JSON.parse(b64decode(encodeProject(p).slice(3)));
-    expect([json.v, json.cal]).toEqual([5, 1]);
+    expect([json.v, json.cal]).toEqual([6, 1]);
     expect(decodeProject(encodeProject(p), TODAY)).toEqual(p);
   });
   it.each([[undefined], ["x"], [0], [2], ["workdays"]])("cal %j means calendar days", (cal) => {
@@ -160,5 +160,48 @@ describe("calendar (v5)", () => {
     const p = decodeProject(enc({ v: 4, t: "Z", zf: 2.5, cal: 1, n: 3, tasks }), TODAY)!;
     expect([p.calendar, p.zoom]).toEqual(["days", 2.5]);
     expect([p.tasks[1]!.s, p.tasks[1]!.e]).toEqual(["2026-11-16", "2026-11-18"]);
+  });
+});
+
+describe("groups (v6)", () => {
+  const tasks = [
+    { i: 1, n: "U", s: "2026-11-09", e: "2026-11-10", c: 0, p: 0 },
+    { i: 2, n: "A1", s: "2026-11-11", e: "2026-11-13", c: 1, p: 0, g: 10 },
+    { i: 3, n: "G1", s: "2026-11-16", e: "2026-11-17", c: 2, p: 0, g: 20, d: [[2, 0, 0]] },
+    { i: 4, n: "A2", s: "2026-11-16", e: "2026-11-18", c: 3, p: 0, g: 10 },
+  ];
+  const groups = [{ i: 10, n: "Acme", x: 1 }, { i: 20, n: "Globex" }];
+  const order = (p: Project) => p.tasks.map(t => `${t.n}${t.g ? "@" + t.g : ""}`);
+
+  it("round-trips a collapsed group in a working-day project", () => {
+    const p = decodeProject(enc({ v: 6, t: "G", zf: 1, cal: 1, n: 30, groups, tasks }), TODAY)!;
+    expect(p.calendar).toBe("workdays");
+    expect(p.groups).toEqual([{ id: 10, n: "Acme", collapsed: true }, { id: 20, n: "Globex", collapsed: false }]);
+    expect(order(p)).toEqual(["U", "A1@10", "A2@10", "G1@20"]); // normalised order
+    expect(decodeProject(encodeProject(p), TODAY)).toEqual(p);
+    const json = JSON.parse(b64decode(encodeProject(p).slice(3)));
+    expect(json.groups).toEqual([{ i: 10, n: "Acme", x: 1 }, { i: 20, n: "Globex" }]);
+    expect(json.tasks[0]).not.toHaveProperty("g");
+  });
+  it("an unknown group reference loads ungrouped", () => {
+    const p = decodeProject(enc({ v: 6, t: "G", zf: 1, n: 30, groups, tasks: [{ ...tasks[1], g: 77 }] }), TODAY)!;
+    expect(p.tasks[0]!.g).toBeUndefined();
+  });
+  it("a group id colliding with a task id (or a duplicate) gets a fresh id", () => {
+    const p = decodeProject(enc({
+      v: 6, t: "G", zf: 1, n: 5,
+      groups: [{ i: 2, n: "Clash" }, { i: 20, n: "Globex" }, { i: 20, n: "Dupe" }, { n: "NoId" }],
+      tasks: [tasks[0], { ...tasks[1], g: 20 }],
+    }), TODAY)!;
+    const ids = p.groups.map(g => g.id);
+    expect(new Set([...ids, ...p.tasks.map(t => t.id)]).size).toBe(ids.length + p.tasks.length);
+    expect(p.groups[1]).toEqual({ id: 20, n: "Globex", collapsed: false });
+    expect(p.tasks.find(t => t.n === "A1")!.g).toBe(20);
+    expect(p.nextId).toBeGreaterThan(Math.max(...ids, ...p.tasks.map(t => t.id)));
+  });
+  it("v5 opens without groups, keeping calendar and zoom", () => {
+    const p = decodeProject(enc({ v: 5, t: "W", zf: 2.5, cal: 1, n: 30, tasks, groups }), TODAY)!;
+    expect([p.calendar, p.zoom, p.groups]).toEqual(["workdays", 2.5, []]);
+    expect(p.tasks.every(t => t.g === undefined)).toBe(true);
   });
 });

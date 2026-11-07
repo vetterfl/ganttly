@@ -1,16 +1,16 @@
 import { useMemo } from "react";
 import { diffDays } from "../../core/dates";
-import { PALETTE, type Task } from "../../core/model";
+import type { Row } from "../../core/groups";
+import { PALETTE } from "../../core/model";
 import type { Settings } from "../../settings/settings";
 import { formatDate } from "../format";
 import type { RowMetrics } from "../hooks";
 import { LABEL_GAP } from "./arrows";
 import { DependencyArrows } from "./DependencyArrows";
-import { barBox, computeRange } from "./geometry";
+import { barBox, computeRange, type Span } from "./geometry";
 import { dayLabelWidth, labelWidth } from "./measure";
 import { avoidSpan, buildTimescale, weekendRects } from "./timescale";
 
-const NO_EXPANDED: ReadonlySet<number> = new Set();
 const isWeekend = (min: Date, dayIndex: number) => [0, 6].includes((min.getDay() + Math.round(dayIndex)) % 7);
 
 /**
@@ -18,14 +18,18 @@ const isWeekend = (min: Date, dayIndex: number) => [0, 6].includes((min.getDay()
  * shading are generated per timescale unit (see timescale.ts), so the DOM size
  * follows the number of visible units rather than the number of days.
  */
-export function Timeline({ tasks, expanded, w, today, availPx, metrics, settings, dropY = null }: {
-  tasks: Task[]; expanded: ReadonlySet<number>; w: number; today: Date;
+export function Timeline({ spans, rows, w, today, availPx, metrics, settings, dropY = null }: {
+  /** Everything with a bar and label (all tasks, including hidden ones, and group summaries): the date range. */
+  spans: readonly Span[];
+  /** Display rows: what is drawn, top to bottom (see core/groups displayRows). */
+  rows: readonly Row[];
+  w: number; today: Date;
   availPx: number; metrics: RowMetrics; settings: Settings;
   /** y of the row-reorder drop line, or null when no row is being dragged. */
   dropY?: number | null;
 }) {
   const { min, totalDays } = useMemo(
-    () => computeRange(tasks, w, availPx, today, labelWidth), [tasks, w, availPx, today],
+    () => computeRange(spans, w, availPx, today, labelWidth), [spans, w, availPx, today],
   );
   const fmt = settings.dateFormat;
   const ts = useMemo(
@@ -46,7 +50,9 @@ export function Timeline({ tasks, expanded, w, today, availPx, metrics, settings
     () => (showToday ? avoidSpan(ts.top, todayX + 4, todayX + 4 + flagW, labelWidth) : ts.top),
     [ts.top, showToday, todayX, flagW],
   );
-  const arrowProps = { tasks, min, w, rowH: metrics.rowH, detailH: metrics.detailH, width };
+  const arrowProps = { min, w, rowH: metrics.rowH, detailH: metrics.detailH, width };
+  // Print hides detail strips (and their spacer lanes), so its arrows are laid out without them.
+  const printRows = useMemo(() => rows.map(r => (r.kind === "task" && r.detail ? { ...r, detail: false } : r)), [rows]);
 
   return (
     <section className="timeline-pane" aria-label="Timeline" style={{ width }}>
@@ -75,11 +81,28 @@ export function Timeline({ tasks, expanded, w, today, availPx, metrics, settings
         </div>
         {showToday && <div className="today-line" style={{ left: todayX }} />}
         {dropY !== null && <div className="drop-line" style={{ top: dropY }} />}
-        {tasks.map(t => {
+        {rows.map(r => {
+          if (r.kind === "group") {
+            const ru = r.rollup;
+            const box = ru && barBox(ru, min, w);
+            return (
+              <div key={`g${r.group.id}`} className="lane group-lane" data-group-id={r.group.id}>
+                {ru && box && (
+                  <>
+                    <div className="summary-bar" data-group-id={r.group.id}
+                      title={`${r.group.n} · ${formatDate(ru.s, fmt)} → ${formatDate(ru.e, fmt)} · ${ru.p}% complete`}
+                      style={{ left: box.left, width: box.width }} />
+                    <span className="bar-label group-label" style={{ left: box.right + LABEL_GAP }}>{r.group.n}</span>
+                  </>
+                )}
+              </div>
+            );
+          }
+          const t = r.task;
           const box = barBox(t, min, w);
           const tip = `${t.n} · ${formatDate(t.s, fmt)} → ${formatDate(t.e, fmt)} · ${t.p}% complete`;
           return (
-            <Lane key={t.id} spacer={expanded.has(t.id)}>
+            <Lane key={t.id} spacer={r.detail}>
               <div className="bar" data-task-id={t.id} title={tip}
                 style={{ left: box.left, width: box.width, background: PALETTE[t.c] ?? PALETTE[0] }}>
                 {settings.showProgress && t.p > 0 && <div className="fill" style={{ width: `${t.p}%` }} />}
@@ -90,9 +113,8 @@ export function Timeline({ tasks, expanded, w, today, availPx, metrics, settings
         })}
         {settings.showArrows && (
           <>
-            <DependencyArrows {...arrowProps} expanded={expanded} className="screen-only" />
-            {/* Print hides detail strips and spacer lanes, so it needs arrows laid out without them */}
-            <DependencyArrows {...arrowProps} expanded={NO_EXPANDED} className="print-only" />
+            <DependencyArrows {...arrowProps} rows={rows} className="screen-only" />
+            <DependencyArrows {...arrowProps} rows={printRows} className="print-only" />
           </>
         )}
       </div>

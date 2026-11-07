@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
-import type { Task } from "../../core/model";
-import { laneTops } from "../timeline/geometry";
+import type { Row } from "../../core/groups";
+import { rowTops } from "../timeline/geometry";
 
 /** Distance (px) from the workspace's top/bottom edge where auto-scroll kicks in. */
 export const EDGE = 40;
@@ -25,11 +25,14 @@ export function slotY(slot: number, tops: readonly number[], totalH: number): nu
   return slot < tops.length ? (tops[slot] as number) : totalH;
 }
 
+/** What is being dragged: a task row or a group header (with its tasks). */
+export interface DragItem { kind: "task" | "group"; id: number }
+
 export interface RowDrag {
-  /** The task being dragged and the current drop slot, or null when idle. */
-  drag: { id: number; slot: number } | null;
+  /** The item being dragged and the current drop slot (a gap between display rows), or null when idle. */
+  drag: (DragItem & { slot: number }) | null;
   /** onPointerDown handler for a row's grip. */
-  onGripDown: (e: ReactPointerEvent, id: number) => void;
+  onGripDown: (e: ReactPointerEvent, item: DragItem) => void;
 }
 
 /**
@@ -38,23 +41,26 @@ export interface RowDrag {
  * The dragged row is only dimmed — nothing reflows until the drop — and a
  * drop line is drawn at the slot in both the grid and the timeline.
  */
-export function useRowDrag({ tasks, expanded, rowH, detailH, workspaceRef, onMove }: {
-  tasks: Task[];
-  expanded: ReadonlySet<number>;
+export function useRowDrag({ rows, rowH, detailH, workspaceRef, snap, onDrop }: {
+  /** Display rows (task rows and group headers) as rendered. */
+  rows: readonly Row[];
   rowH: number;
   detailH: number;
   workspaceRef: RefObject<HTMLElement | null>;
-  onMove: (id: number, toIndex: number) => void;
+  /** Restrict the slot for an item (e.g. groups may only land between groups); default: any slot. */
+  snap?: (item: DragItem, slot: number) => number;
+  /** Called once on a drop with the final slot; resolves it to an action. */
+  onDrop: (item: DragItem, slot: number) => void;
 }): RowDrag {
-  const [drag, setDrag] = useState<{ id: number; slot: number } | null>(null);
+  const [drag, setDrag] = useState<(DragItem & { slot: number }) | null>(null);
   const stop = useRef<(() => void) | null>(null);
   useEffect(() => () => stop.current?.(), []);
 
-  const onGripDown = useCallback((e: ReactPointerEvent, id: number) => {
+  const onGripDown = useCallback((e: ReactPointerEvent, item: DragItem) => {
     if (e.button !== 0) return;
     const ws = workspaceRef.current;
     const body = ws?.querySelector<HTMLElement>(".grid-body");
-    const from = tasks.findIndex(t => t.id === id);
+    const from = rows.findIndex(r => (r.kind === "task" ? item.kind === "task" && r.task.id === item.id : item.kind === "group" && r.group.id === item.id));
     if (!ws || !body || from < 0) return;
     e.preventDefault();
     e.stopPropagation();
@@ -63,12 +69,13 @@ export function useRowDrag({ tasks, expanded, rowH, detailH, workspaceRef, onMov
     try { grip.setPointerCapture(pointerId); } catch { /* ignore */ }
 
     // Geometry is read once at pointerdown; it can't change during a drag.
-    const tops = laneTops(tasks, expanded, rowH, detailH);
+    const tops = rowTops(rows, rowH, detailH);
     let clientY = e.clientY;
     let slot = from;
     const update = () => {
-      slot = slotAt(clientY - body.getBoundingClientRect().top, tops, rowH);
-      setDrag(d => (d && d.slot === slot ? d : { id, slot }));
+      const raw = slotAt(clientY - body.getBoundingClientRect().top, tops, rowH);
+      slot = snap ? snap(item, raw) : raw;
+      setDrag(d => (d && d.slot === slot ? d : { ...item, slot }));
     };
     update();
     ws.classList.add("row-dragging");
@@ -101,10 +108,7 @@ export function useRowDrag({ tasks, expanded, rowH, detailH, workspaceRef, onMov
       ws.classList.remove("row-dragging");
       stop.current = null;
       setDrag(null);
-      if (commit) {
-        const to = dropIndex(from, slot);
-        if (to !== from) onMove(id, to);
-      }
+      if (commit) onDrop(item, slot);
     };
     const up = (ev: PointerEvent) => { if (ev.pointerId === pointerId) finish(true); };
     const cancel = (ev: PointerEvent) => { if (ev.pointerId === pointerId) finish(false); };
@@ -116,7 +120,7 @@ export function useRowDrag({ tasks, expanded, rowH, detailH, workspaceRef, onMov
     grip.addEventListener("pointercancel", cancel);
     window.addEventListener("keydown", key, true);
     stop.current = () => finish(false);
-  }, [tasks, expanded, rowH, detailH, workspaceRef, onMove]);
+  }, [rows, rowH, detailH, workspaceRef, snap, onDrop]);
 
   return { drag, onGripDown };
 }

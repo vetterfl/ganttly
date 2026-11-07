@@ -1,29 +1,33 @@
 import { useId } from "react";
+import type { Row } from "../../core/groups";
 import type { Task } from "../../core/model";
 import { anchorsFor, routeArrow } from "./arrows";
-import { barBox, laneTops } from "./geometry";
+import { barBox, rowsHeight, rowTops } from "./geometry";
 
 /**
  * One SVG overlay holding every link arrow. Geometry is computed from the
  * same row metrics and day→x mapping the lanes and bars use, never measured
  * from the DOM, so arrows cannot drift from their bars.
  */
-export function DependencyArrows({ tasks, expanded, min, w, rowH, detailH, width, className }: {
-  tasks: Task[]; expanded: ReadonlySet<number>; min: Date; w: number;
+export function DependencyArrows({ rows, min, w, rowH, detailH, width, className }: {
+  /** Display rows; arrows to or from tasks that aren't displayed (collapsed groups) are skipped. */
+  rows: readonly Row[]; min: Date; w: number;
   rowH: number; detailH: number; width: number; className: string;
 }) {
   const markerId = useId().replace(/:/g, "");
-  const tops = laneTops(tasks, expanded, rowH, detailH);
-  const index = new Map(tasks.map((t, i) => [t.id, i]));
-  const last = tasks.at(-1);
-  const height = last ? tops[tops.length - 1]! + rowH + (expanded.has(last.id) ? detailH : 0) : 0;
+  const tops = rowTops(rows, rowH, detailH);
+  const height = rowsHeight(rows, rowH, detailH);
+  const index = new Map<number, number>();
+  rows.forEach((r, i) => { if (r.kind === "task") index.set(r.task.id, i); });
 
   const paths: { key: string; d: string }[] = [];
-  tasks.forEach((succ, j) => {
+  rows.forEach((row, j) => {
+    if (row.kind !== "task") return;
+    const succ = row.task;
     for (const link of succ.deps) {
       const i = index.get(link.pred);
       if (i === undefined) continue;
-      const pred = tasks[i]!;
+      const pred = (rows[i] as { task: Task }).task;
       const { from, to } = anchorsFor(link.type);
       const pb = barBox(pred, min, w);
       const sb = barBox(succ, min, w);

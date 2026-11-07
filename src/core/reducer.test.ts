@@ -4,16 +4,17 @@ import { lk, mk } from "./helpers.testutil";
 import { MAX_NAME, type Project } from "./model";
 import { formatPredecessors } from "./notation";
 import { decodeProject, encodeProject } from "./urlCodec";
+import { displayRows } from "./groups";
 
 const proj = (tasks = [mk(1, "2026-11-02", "2026-11-06"), mk(2, "2026-11-09", "2026-11-12")]): Project => ({
-  title: "P", zoom: 2, calendar: "days", nextId: tasks.length + 1, tasks,
+  title: "P", zoom: 2, calendar: "days", groups: [], nextId: tasks.length + 1, tasks,
 });
 const TODAY = "2026-11-06";
 
 describe("reducer basics", () => {
   it("newProject: empty Untitled Project with default zoom and nextId 1", () => {
     const p = reducer({ ...proj(), title: "Old", zoom: 4, nextId: 9 }, { type: "newProject" });
-    expect(p).toEqual({ title: "Untitled Project", zoom: 1, calendar: "days", tasks: [], nextId: 1 });
+    expect(p).toEqual({ title: "Untitled Project", zoom: 1, calendar: "days", groups: [], tasks: [], nextId: 1 });
   });
   it("newProject: round-trips through the share link", () => {
     const p = reducer(proj(), { type: "newProject" });
@@ -30,7 +31,7 @@ describe("reducer basics", () => {
     expect([p.tasks[1]!.s, p.tasks[1]!.e]).toEqual(["2026-11-07", "2026-11-11"]);
   });
   it("addTask: empty project starts today", () => {
-    const p = reducer({ title: "", zoom: 2, calendar: "days", tasks: [], nextId: 1 }, { type: "addTask", today: TODAY });
+    const p = reducer({ title: "", zoom: 2, calendar: "days", groups: [], tasks: [], nextId: 1 }, { type: "addTask", today: TODAY });
     expect([p.tasks[0]!.s, p.tasks[0]!.e, p.tasks[0]!.c]).toEqual([TODAY, "2026-11-10", 0]);
   });
   it("rename truncates", () => {
@@ -144,7 +145,7 @@ describe("dependencies via reducer", () => {
 
 describe("working-day calendar", () => {
   const wp = (tasks: ReturnType<typeof mk>[]): Project =>
-    reducer({ title: "W", zoom: 1, calendar: "workdays", nextId: 99, tasks }, { type: "load", project: { title: "W", zoom: 1, calendar: "workdays", nextId: 99, tasks } });
+    reducer({ title: "W", zoom: 1, calendar: "workdays", groups: [], nextId: 99, tasks }, { type: "load", project: { title: "W", zoom: 1, calendar: "workdays", groups: [], nextId: 99, tasks } });
   const span = (p: Project, id: number) => { const t = p.tasks.find(x => x.id === id)!; return [t.s, t.e]; };
   const P = (s: string, e: string) => mk(1, s, e);
   const S3 = (deps: ReturnType<typeof lk>[]) => mk(2, "2026-11-02", "2026-11-04", deps); // 3 working days
@@ -244,5 +245,92 @@ describe("moveTask", () => {
     const t5 = p.tasks.find(t => t.id === 5)!;
     expect(formatPredecessors(t5.deps, p.tasks, "de")).toBe("4");
     expect(p.tasks.map(t => [t.id, t.s, t.e]).sort()).toEqual(before);
+  });
+});
+
+describe("groups", () => {
+  // U | Acme: A1, A2 | Globex: G1   (ids: U=1, A1=2, A2=3, G1=4; groups Acme=10, Globex=20)
+  const base = (): Project => {
+    const p: Project = {
+      title: "G", zoom: 1, calendar: "days", nextId: 30,
+      groups: [{ id: 10, n: "Acme", collapsed: false }, { id: 20, n: "Globex", collapsed: false }],
+      tasks: [
+        mk(1, "2026-11-02", "2026-11-03", [], "U"),
+        { ...mk(2, "2026-11-04", "2026-11-05", [], "A1"), g: 10 },
+        { ...mk(3, "2026-11-06", "2026-11-09", [lk(2)], "A2"), g: 10 },
+        { ...mk(4, "2026-11-10", "2026-11-12", [lk(3)], "G1"), g: 20 },
+      ],
+    };
+    return reducer(p, { type: "load", project: p });
+  };
+  const order = (p: Project) => p.tasks.map(t => `${t.n}${t.g ? "@" + t.g : ""}`);
+
+  it("addGroup appends 'New group' with the next id", () => {
+    const p = reducer(base(), { type: "addGroup" });
+    expect(p.groups.at(-1)).toEqual({ id: 30, n: "New group", collapsed: false });
+    expect(p.nextId).toBe(31);
+  });
+  it("renameGroup truncates; toggleGroup flips collapsed", () => {
+    let p = reducer(base(), { type: "renameGroup", id: 10, name: "x".repeat(200) });
+    expect(p.groups[0]!.n).toHaveLength(MAX_NAME);
+    p = reducer(p, { type: "toggleGroup", id: 20 });
+    expect(p.groups[1]!.collapsed).toBe(true);
+    expect(reducer(p, { type: "toggleGroup", id: 99 })).toBe(p);
+  });
+  it("addTask into a group becomes that group's last task; unknown group is a no-op", () => {
+    const p = reducer(base(), { type: "addTask", today: TODAY, group: 10 });
+    expect(order(p)).toEqual(["U", "A1@10", "A2@10", "New task@10", "G1@20"]);
+    const b = base();
+    expect(reducer(b, { type: "addTask", today: TODAY, group: 99 })).toBe(b);
+  });
+  it("setTaskGroup moves U to the end of Globex", () => {
+    const p = reducer(base(), { type: "setTaskGroup", id: 1, group: 20 });
+    expect(order(p)).toEqual(["A1@10", "A2@10", "G1@20", "U@20"]);
+    const back = reducer(p, { type: "setTaskGroup", id: 1, group: null });
+    expect(order(back)).toEqual(["U", "A1@10", "A2@10", "G1@20"]);
+  });
+  it("moving A1 up across the header makes it the last ungrouped task", () => {
+    const p = reducer(base(), { type: "moveTask", id: 2, toIndex: 1, group: null });
+    expect(order(p)).toEqual(["U", "A1", "A2@10", "G1@20"]);
+  });
+  it("moving A2 down across the header makes it Globex's first task", () => {
+    const p = reducer(base(), { type: "moveTask", id: 3, toIndex: 2, group: 20 });
+    expect(order(p)).toEqual(["U", "A1@10", "A2@20", "G1@20"]);
+  });
+  it("dropping U as the first task of Globex", () => {
+    const p = reducer(base(), { type: "moveTask", id: 1, toIndex: 2, group: 20 });
+    expect(order(p)).toEqual(["A1@10", "A2@10", "U@20", "G1@20"]);
+  });
+  it("moveGroup moves a group with its tasks; numbers follow", () => {
+    const p = reducer(base(), { type: "moveGroup", id: 20, toIndex: 0 });
+    expect(p.groups.map(g => g.n)).toEqual(["Globex", "Acme"]);
+    expect(order(p)).toEqual(["U", "G1@20", "A1@10", "A2@10"]);
+    // links still point at the same tasks
+    expect(formatPredecessors(p.tasks[1]!.deps, p.tasks, "de")).toBe("4");
+  });
+  it("deleteGroup keeping tasks: they join the end of the ungrouped section, links intact", () => {
+    const p = reducer(base(), { type: "deleteGroup", id: 10, withTasks: false });
+    expect(p.groups.map(g => g.n)).toEqual(["Globex"]);
+    expect(order(p)).toEqual(["U", "A1", "A2", "G1@20"]);
+    expect(p.tasks.find(t => t.id === 3)!.deps).toEqual([lk(2)]);
+    expect(p.tasks.map(t => [t.s, t.e])).toEqual(base().tasks.map(t => [t.s, t.e]));
+  });
+  it("deleteGroup with tasks: links to them go, successors become manual with their dates", () => {
+    const before = base().tasks.find(t => t.id === 4)!;
+    const p = reducer(base(), { type: "deleteGroup", id: 10, withTasks: true });
+    expect(order(p)).toEqual(["U", "G1@20"]);
+    const g1 = p.tasks.find(t => t.id === 4)!;
+    expect(g1.deps).toEqual([]);
+    expect([g1.s, g1.e]).toEqual([before.s, before.e]);
+  });
+  it("roll-ups follow scheduling", () => {
+    let p = base();
+    p = reducer(p, { type: "setDuration", id: 2, days: 5 }); // A1 longer → A2 and G1 pushed
+    const acme = displayRows(p, new Set()).find(r => r.kind === "group" && r.group.id === 10)!;
+    expect(acme.kind === "group" && acme.rollup!.e).toBe(p.tasks.find(t => t.id === 3)!.e);
+  });
+  it("tasks referencing a deleted group can't survive normalisation", () => {
+    const p = reducer(base(), { type: "moveTask", id: 1, toIndex: 3, group: 99 });
+    expect(p).toEqual(base());
   });
 });
