@@ -482,3 +482,52 @@ describe("project calendar", () => {
     expect(urlProject().tasks[1]!.s).toBe("2026-11-23");
   });
 });
+
+describe("move tasks up and down", () => {
+  const names = () => rows().map(nameOf);
+  it("Alt+↓ in row 2's name moves it to row 3 and keeps focus", async () => {
+    const user = userEvent.setup();
+    renderApp(four());
+    const input = row(2).querySelector<HTMLInputElement>(".name-input")!;
+    input.focus();
+    await user.keyboard("{Alt>}{ArrowDown}{/Alt}");
+    expect(names()).toEqual(["Alpha", "Gamma", "Beta", "Delta"]);
+    expect(rows().map(r => r.querySelector(".cell-id")!.textContent)).toEqual(["1", "2", "3", "4"]);
+    expect(document.activeElement).toBe(row(3).querySelector(".name-input"));
+    await user.keyboard("{Alt>}{ArrowUp}{/Alt}{Alt>}{ArrowUp}{/Alt}");
+    expect(names()).toEqual(["Beta", "Alpha", "Gamma", "Delta"]);
+    expect(document.activeElement).toBe(row(1).querySelector(".name-input"));
+    expect(urlProject().tasks.map(t => t.n)).toEqual(["Beta", "Alpha", "Gamma", "Delta"]);
+  });
+
+  it("buttons are disabled at the edges; the detail strip stays with its task", async () => {
+    const user = userEvent.setup();
+    renderApp(four());
+    await user.click(toggle(row(1)));
+    const up = () => screen.getByRole("button", { name: "Move task up" }) as HTMLButtonElement;
+    const down = () => screen.getByRole("button", { name: "Move task down" }) as HTMLButtonElement;
+    expect(up().disabled).toBe(true);
+    expect(down().disabled).toBe(false);
+    await user.click(down());
+    await user.click(down());
+    await user.click(down());
+    expect(names()).toEqual(["Beta", "Gamma", "Delta", "Alpha"]);
+    expect(down().disabled).toBe(true);
+    const detail = document.querySelector<HTMLElement>(".detail")!;
+    expect(detail.dataset.taskId).toBe("1");
+    expect(detail.previousElementSibling).toBe(row(4));
+    expect(document.activeElement).toBe(up());
+  });
+
+  it("links follow the task, dates unchanged", async () => {
+    const user = userEvent.setup();
+    const p = four();
+    p.tasks[3] = mkTask(4, "Delta", "2026-11-16", "2026-11-18", [lk(2)]);
+    renderApp(p);
+    const before = urlProject().tasks.map(t => [t.id, t.s, t.e]).sort();
+    row(2).querySelector<HTMLInputElement>(".name-input")!.focus();
+    await user.keyboard("{Alt>}{ArrowDown}{/Alt}");
+    expect(preds(row(4)).value).toBe("3");
+    expect(urlProject().tasks.map(t => [t.id, t.s, t.e]).sort()).toEqual(before);
+  });
+});

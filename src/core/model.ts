@@ -121,6 +121,8 @@ export type Action =
   | { type: "setColor"; id: number; color: number }
   | { type: "setProgress"; id: number; pct: number }
   | { type: "setTitle"; title: string }
+  /** Move a task to position `toIndex` (clamped to 0..n−1). Ids, links and dates are unchanged; rows renumber. */
+  | { type: "moveTask"; id: number; toIndex: number }
   /** Switch the project calendar: dates are kept (snapped onto working days), durations re-counted, links rescheduled. */
   | { type: "setCalendar"; calendar: Calendar }
   /** Zoom factor; clamped by clampZoomFactor (below 1 / invalid → 1). */

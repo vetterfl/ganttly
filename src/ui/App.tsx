@@ -8,6 +8,8 @@ import { formatDateObj } from "./format";
 import { TaskGrid } from "./grid/TaskGrid";
 import { useElementWidth, useRowMetrics } from "./hooks";
 import { useDragPan } from "./useDragPan";
+import { slotY, useRowDrag } from "./grid/useRowDrag";
+import { laneTops } from "./timeline/geometry";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { AddTaskIcon, FitIcon, LinkIcon, NewFileIcon, PrintIcon, SettingsIcon } from "./icons";
 import { SettingsDialog } from "./SettingsDialog";
@@ -91,6 +93,15 @@ export function App() {
   const availPx = Math.max(0, workspaceW - gridW - 2);
   const onZoom = useCallback((z: number) => dispatch({ type: "setZoom", zoom: z }), []);
   useDragPan(workspaceRef);
+  const onMoveTask = useCallback((id: number, toIndex: number) => dispatch({ type: "moveTask", id, toIndex }), []);
+  const rowDrag = useRowDrag({ tasks, expanded, rowH: metrics.rowH, detailH: metrics.detailH, workspaceRef, onMove: onMoveTask });
+  const dropY = useMemo(() => {
+    if (!rowDrag.drag) return null;
+    const tops = laneTops(tasks, expanded, metrics.rowH, metrics.detailH);
+    const last = tasks.at(-1);
+    const total = last ? (tops.at(-1) ?? 0) + metrics.rowH + (expanded.has(last.id) ? metrics.detailH : 0) : 0;
+    return slotY(rowDrag.drag.slot, tops, total);
+  }, [rowDrag.drag, tasks, expanded, metrics]);
   const zoomApi = useZoom({ stored: zoom, onChange: onZoom, tasks, availPx, today, workspaceRef, gridW });
 
   const addTask = () => {
@@ -186,9 +197,10 @@ export function App() {
 
       <div className="workspace" ref={workspaceRef}>
         <div className="split">
-          <TaskGrid ref={gridRef} tasks={tasks} expanded={expanded} onToggle={toggle} onDelete={remove} dispatch={dispatch} calendar={project.calendar} />
+          <TaskGrid ref={gridRef} tasks={tasks} expanded={expanded} onToggle={toggle} onDelete={remove} dispatch={dispatch} calendar={project.calendar}
+            dragId={rowDrag.drag?.id ?? null} dropY={dropY} onGripDown={rowDrag.onGripDown} />
           <Timeline tasks={tasks} expanded={expanded} w={zoomApi.w} today={today}
-            availPx={availPx} metrics={metrics} settings={settings} />
+            availPx={availPx} metrics={metrics} settings={settings} dropY={dropY} />
         </div>
       </div>
 

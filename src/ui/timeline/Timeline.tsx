@@ -18,9 +18,11 @@ const isWeekend = (min: Date, dayIndex: number) => [0, 6].includes((min.getDay()
  * shading are generated per timescale unit (see timescale.ts), so the DOM size
  * follows the number of visible units rather than the number of days.
  */
-export function Timeline({ tasks, expanded, w, today, availPx, metrics, settings }: {
+export function Timeline({ tasks, expanded, w, today, availPx, metrics, settings, dropY = null }: {
   tasks: Task[]; expanded: ReadonlySet<number>; w: number; today: Date;
   availPx: number; metrics: RowMetrics; settings: Settings;
+  /** y of the row-reorder drop line, or null when no row is being dragged. */
+  dropY?: number | null;
 }) {
   const { min, totalDays } = useMemo(
     () => computeRange(tasks, w, availPx, today, labelWidth), [tasks, w, availPx, today],
@@ -72,6 +74,7 @@ export function Timeline({ tasks, expanded, w, today, availPx, metrics, settings
           </svg>
         </div>
         {showToday && <div className="today-line" style={{ left: todayX }} />}
+        {dropY !== null && <div className="drop-line" style={{ top: dropY }} />}
         {tasks.map(t => {
           const box = barBox(t, min, w);
           const tip = `${t.n} · ${formatDate(t.s, fmt)} → ${formatDate(t.e, fmt)} · ${t.p}% complete`;

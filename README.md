@@ -8,6 +8,7 @@ MS Project–style Gantt charts in the browser — with task dependencies, prede
 
 - **Task table + timeline** side by side, row-aligned like MS Project: ID, Task Name, Duration, Start, Finish, % Complete, Predecessors. Per-task colour, progress and delete live in a collapsible detail row (▸).
 - **Resizable columns:** drag the right edge of a column header, double-click it to fit the widest entry, or focus it and use ←/→ (Home resets). Values that don't fit end in "…" and show in full on hover.
+- **Reorder tasks:** drag a row by the grip in its ID cell (mouse or touch; Escape cancels), press Alt+↑ / Alt+↓ in a row, or use *Up* / *Down* in the row's options. Rows renumber; predecessor links follow their tasks.
 - **New project:** *New* in the File group starts an empty chart (asking first if the current one has tasks). The browser's Back button brings the previous chart back.
 - **Dependencies** of all four MS Project types — finish-to-start, start-to-start, finish-to-finish, start-to-finish — with lag or lead in days or weeks, drawn as arrows in the timeline.
 - **Auto-scheduling:** a task with predecessors starts as early as its links allow and keeps its duration. Move a task and everything that depends on it follows.

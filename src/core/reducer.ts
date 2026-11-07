@@ -97,6 +97,17 @@ export function reducer(project: Project, action: Action): Project {
       return edit(project, action.id, (t) => ({ ...t, p }));
     }
 
+    case "moveTask": {
+      const from = project.tasks.findIndex((t) => t.id === action.id);
+      if (from < 0 || !Number.isFinite(action.toIndex)) return project;
+      const to = Math.min(Math.max(Math.trunc(action.toIndex), 0), project.tasks.length - 1);
+      if (to === from) return project;
+      const tasks = project.tasks.slice();
+      const [t] = tasks.splice(from, 1);
+      tasks.splice(to, 0, t as Task);
+      return withTasks(project, tasks);
+    }
+
     case "setTitle":
       return { ...project, title: action.title };
 

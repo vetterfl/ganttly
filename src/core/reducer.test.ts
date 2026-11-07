@@ -212,3 +212,37 @@ describe("working-day calendar", () => {
     expect(reducer(wp([]), { type: "newProject" }).calendar).toBe("days");
   });
 });
+
+describe("moveTask", () => {
+  const five = () => proj([1, 2, 3, 4, 5].map(i => mk(i, "2026-11-02", "2026-11-04")));
+  const ids = (p: Project) => p.tasks.map(t => t.id);
+  it("moves down and up", () => {
+    expect(ids(reducer(five(), { type: "moveTask", id: 2, toIndex: 3 }))).toEqual([1, 3, 4, 2, 5]);
+    expect(ids(reducer(five(), { type: "moveTask", id: 5, toIndex: 0 }))).toEqual([5, 1, 2, 3, 4]);
+  });
+  it("clamps at both ends", () => {
+    expect(ids(reducer(five(), { type: "moveTask", id: 2, toIndex: 99 }))).toEqual([1, 3, 4, 5, 2]);
+    expect(ids(reducer(five(), { type: "moveTask", id: 4, toIndex: -3 }))).toEqual([4, 1, 2, 3, 5]);
+  });
+  it("is a no-op (same object) when the position doesn't change or the id is unknown", () => {
+    const p = five();
+    expect(reducer(p, { type: "moveTask", id: 3, toIndex: 2 })).toBe(p);
+    expect(reducer(p, { type: "moveTask", id: 1, toIndex: -1 })).toBe(p);
+    expect(reducer(p, { type: "moveTask", id: 42, toIndex: 0 })).toBe(p);
+    expect(reducer(p, { type: "moveTask", id: 1, toIndex: NaN })).toBe(p);
+  });
+  it("links follow the task; dates are unchanged", () => {
+    let p = proj([
+      mk(1, "2026-11-02", "2026-11-03"), mk(2, "2026-11-04", "2026-11-05"), mk(3, "2026-11-06", "2026-11-07"),
+      mk(4, "2026-11-08", "2026-11-09"), mk(5, "2026-11-02", "2026-11-03", [lk(2)]),
+    ]);
+    p = reducer(p, { type: "load", project: p });
+    const before = p.tasks.map(t => [t.id, t.s, t.e]).sort();
+    expect(formatPredecessors(p.tasks[4]!.deps, p.tasks, "de")).toBe("2");
+    p = reducer(p, { type: "moveTask", id: 2, toIndex: 3 });
+    expect(p.tasks[3]!.id).toBe(2);
+    const t5 = p.tasks.find(t => t.id === 5)!;
+    expect(formatPredecessors(t5.deps, p.tasks, "de")).toBe("4");
+    expect(p.tasks.map(t => [t.id, t.s, t.e]).sort()).toEqual(before);
+  });
+});
