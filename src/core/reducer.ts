@@ -1,5 +1,5 @@
 import {
-  MAX_DURATION, MAX_NAME, PALETTE, clampZoom, emptyProject, isAuto,
+  MAX_DURATION, MAX_NAME, PALETTE, clampZoomFactor, emptyProject, isAuto,
   type Action, type Project, type Task,
 } from "./model";
 import { ISO_RE, addDaysIso, diffDays, iso, parseDate } from "./dates";
@@ -92,7 +92,7 @@ export function reducer(project: Project, action: Action): Project {
       return { ...project, title: action.title };
 
     case "setZoom":
-      return { ...project, zoom: clampZoom(action.zoom) };
+      return { ...project, zoom: clampZoomFactor(action.zoom) };
 
     case "setPredecessors": {
       const ids = new Set(project.tasks.map((t) => t.id));

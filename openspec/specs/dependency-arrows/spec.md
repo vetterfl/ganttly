@@ -32,7 +32,7 @@ Arrows SHALL stay attached to their bars when the zoom level changes, when rows 
 - **THEN** the arrow's vertical segment stretches across the extra space and still ends at task 4's bar
 
 #### Scenario: Zoom change
-- **WHEN** the user zooms from Normal to Compact
+- **WHEN** the user zooms from 300% back to Fit, or zooms with the mouse wheel
 - **THEN** every arrow is redrawn to the new bar positions
 
 ### Requirement: Arrow visibility setting

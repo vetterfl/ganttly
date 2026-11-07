@@ -13,7 +13,7 @@ const TODAY = "2026-11-06";
 describe("reducer basics", () => {
   it("newProject: empty Untitled Project with default zoom and nextId 1", () => {
     const p = reducer({ ...proj(), title: "Old", zoom: 4, nextId: 9 }, { type: "newProject" });
-    expect(p).toEqual({ title: "Untitled Project", zoom: 2, tasks: [], nextId: 1 });
+    expect(p).toEqual({ title: "Untitled Project", zoom: 1, tasks: [], nextId: 1 });
   });
   it("newProject: round-trips through the share link", () => {
     const p = reducer(proj(), { type: "newProject" });
@@ -63,7 +63,11 @@ describe("reducer basics", () => {
     expect(reducer(proj(), { type: "setProgress", id: 1, pct: 33.6 }).tasks[0]!.p).toBe(34);
     expect(reducer(proj(), { type: "setProgress", id: 1, pct: -5 }).tasks[0]!.p).toBe(0);
     expect(reducer(proj(), { type: "setTitle", title: " a " }).title).toBe(" a ");
-    expect(reducer(proj(), { type: "setZoom", zoom: 99 }).zoom).toBe(4);
+    expect(reducer(proj(), { type: "setZoom", zoom: 2.5 }).zoom).toBe(2.5);
+    expect(reducer(proj(), { type: "setZoom", zoom: 0.5 }).zoom).toBe(1);
+    expect(reducer(proj(), { type: "setZoom", zoom: NaN }).zoom).toBe(1);
+    expect(reducer(proj(), { type: "setZoom", zoom: Infinity }).zoom).toBe(1);
+    expect(reducer(proj(), { type: "setZoom", zoom: 1e9 }).zoom).toBe(10000);
   });
   it("unknown id is a no-op; immutability", () => {
     const p = proj();

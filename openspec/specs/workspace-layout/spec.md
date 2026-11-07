@@ -7,7 +7,7 @@ Defines the overall page shell (command ribbon, full-width grid and timeline spl
 ## Requirements
 
 ### Requirement: Command ribbon
-The page SHALL have a top title bar showing the app name and an editable project title. Below it, a command ribbon SHALL group the commands under labelled groups: Task (Add task), Share (Copy link), View (zoom out, zoom level label, zoom in) and File (New, Print).
+The page SHALL have a top title bar showing the app name and an editable project title. Below it, a command ribbon SHALL group the commands under labelled groups: Task (Add task), Share (Copy link), View (zoom out, zoom slider, zoom label, zoom in, Fit) and File (New, Print).
 
 #### Scenario: Ribbon groups
 - **WHEN** the page loads
@@ -20,6 +20,10 @@ The page SHALL have a top title bar showing the app name and an editable project
 #### Scenario: Copy link
 - **WHEN** the user clicks Copy link
 - **THEN** a link containing the full chart state is copied to the clipboard and a toast confirms it
+
+#### Scenario: Zoom slider
+- **WHEN** the user drags the zoom slider to its right end
+- **THEN** the timeline zooms to its maximum (one day is 120px wide), and the slider, label and ± buttons stay in sync
 
 ### Requirement: Full-width split view
 Below the ribbon, the workspace SHALL fill the full width and remaining height of the browser window, with the task grid on the left and the timeline on the right and no maximum-width cap.

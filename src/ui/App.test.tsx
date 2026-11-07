@@ -361,3 +361,63 @@ describe("resizable columns", () => {
     expect(preds(row(2)).title).toBe("1");
   });
 });
+
+describe("zoom controls", () => {
+  // jsdom has no layout: Fit falls back to 34px/day, so max zoom = 120/34 ≈ 353%.
+  const label = () => document.querySelector(".zoom-label")!.textContent;
+  const btn = (name: string) => screen.getByRole("button", { name }) as HTMLButtonElement;
+  const slider = () => screen.getByRole("slider", { name: "Zoom" }) as HTMLInputElement;
+
+  it("opens at Fit with zoom out disabled", () => {
+    renderApp(four());
+    expect(label()).toBe("Fit");
+    expect(btn("Zoom out").disabled).toBe(true);
+    expect(slider().value).toBe("0");
+  });
+
+  it("two zoom-ins give about 156%, stored in the link", async () => {
+    const user = userEvent.setup();
+    renderApp(four());
+    await user.click(btn("Zoom in"));
+    await user.click(btn("Zoom in"));
+    expect(label()).toBe("156%");
+    expect(urlProject().zoom).toBeCloseTo(1.5625, 6);
+    expect(JSON.parse(b64decode(new URLSearchParams(location.search).get("d")!)).v).toBe(4);
+  });
+
+  it("Fit and Ctrl/⌘ 0 return to Fit", async () => {
+    const user = userEvent.setup();
+    renderApp(four());
+    await user.click(btn("Zoom in"));
+    await user.click(screen.getByRole("button", { name: /^Fit$/ }));
+    expect(label()).toBe("Fit");
+    await user.keyboard("{Control>}={/Control}");
+    expect(label()).toBe("125%");
+    await user.keyboard("{Control>}0{/Control}");
+    expect(label()).toBe("Fit");
+    expect(urlProject().zoom).toBe(1);
+  });
+
+  it("zoom in is disabled at the maximum (one day = 120px)", async () => {
+    const user = userEvent.setup();
+    renderApp(four());
+    for (let i = 0; i < 8 && !btn("Zoom in").disabled; i++) await user.click(btn("Zoom in"));
+    expect(btn("Zoom in").disabled).toBe(true);
+    expect(label()).toBe(`${Math.round((120 / 34) * 100)}%`);
+    expect(slider().value).toBe("1000");
+  });
+
+  it("slider to the right end zooms to the maximum and keeps the label in sync", () => {
+    renderApp(four());
+    fireEvent.change(slider(), { target: { value: "1000" } });
+    expect(label()).toBe("353%");
+    expect(btn("Zoom in").disabled).toBe(true);
+    expect(btn("Zoom out").disabled).toBe(false);
+  });
+
+  it("keeps a stored factor above the current maximum (clamped only for display)", () => {
+    renderApp({ ...four(), zoom: 9 });
+    expect(label()).toBe("353%");
+    expect(urlProject().zoom).toBe(9);
+  });
+});

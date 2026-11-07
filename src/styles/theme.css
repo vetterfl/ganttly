@@ -78,7 +78,10 @@ body {
 .btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); flex-direction: row; }
 .btn.primary:hover { background: var(--accent-dark); }
 .btn.plain { flex-direction: row; border-color: var(--line); background: #fff; }
-.zoom-label { font-size: 12px; font-weight: 600; color: var(--ink-soft); min-width: 58px; text-align: center; }
+.zoom-ctl { display: flex; align-items: center; gap: 2px; }
+.zoom-label { font-size: 12px; font-weight: 600; color: var(--ink-soft); min-width: 44px; text-align: center; font-variant-numeric: tabular-nums; }
+.zoom-slider { width: 110px; accent-color: var(--accent); }
+.btn:disabled { opacity: .4; cursor: default; background: none; border-color: transparent; }
 
 /* ---------- Workspace (single scroll container) ---------- */
 .workspace { flex: 1 1 auto; min-height: 0; overflow: auto; background: var(--panel); position: relative; }
@@ -186,16 +189,15 @@ body {
 /* ---------- Timeline pane ---------- */
 .timeline-pane { flex: 1 0 auto; position: relative; background: var(--panel); }
 .timescale { position: sticky; top: 0; z-index: 2; background: var(--head-bg); border-bottom: 1px solid var(--line); height: var(--header-h); }
-.tier { display: flex; height: calc(var(--header-h) / 2); }
+.tier { position: relative; height: calc(var(--header-h) / 2); overflow: hidden; }
 .tier + .tier { border-top: 1px solid var(--line-soft); }
-.month-cell {
-  flex: 0 0 auto; font-size: 12px; font-weight: 600; color: var(--ink);
-  padding: 0 6px; display: flex; align-items: center;
-  border-left: 1px solid var(--line); overflow: hidden; white-space: nowrap;
-}
-.day-cell { flex: 0 0 auto; font-size: 11px; color: var(--ink-soft); display: flex; align-items: center; justify-content: center; border-left: 1px solid var(--line-soft); }
-.day-cell.weekend { background: var(--weekend); }
-.day-cell.today span { background: var(--today); color: #fff; font-weight: 700; border-radius: 2px; padding: 1px 4px; }
+/* Header cells are absolutely positioned per timescale unit (see timescale.ts) */
+.ts-cell { position: absolute; top: 0; bottom: 0; display: flex; align-items: center; overflow: hidden; white-space: nowrap; }
+.top-cell { font-size: 12px; font-weight: 600; color: var(--ink); padding: 0 6px; border-left: 1px solid var(--line); }
+.bottom-cell { font-size: 12px; font-weight: 600; color: var(--ink-soft); padding: 0 6px; border-left: 1px solid var(--line-soft); }
+.bottom-cell.day { font-size: 11px; font-weight: 400; padding: 0; justify-content: center; }
+.bottom-cell.weekend { background: var(--weekend); }
+.bottom-cell.today span { background: var(--today); color: #fff; font-weight: 700; border-radius: 2px; padding: 1px 4px; }
 .today-flag {
   position: absolute; top: calc(var(--header-h) / 4); transform: translateY(-50%); margin-left: 4px; z-index: 1;
   font-size: 10px; font-weight: 700; color: #fff; background: var(--today);
@@ -203,8 +205,9 @@ body {
 }
 .tl-body { position: relative; }
 .tl-cols { position: absolute; inset: 0; pointer-events: none; }
-.day-col { position: absolute; top: 0; bottom: 0; border-left: 1px solid var(--line-soft); }
-.day-col.weekend { background: var(--weekend); }
+.weekend-col { position: absolute; top: 0; bottom: 0; background: var(--weekend); }
+.gridlines { position: absolute; left: 0; top: 0; overflow: visible; }
+.gridlines path { stroke: var(--line-soft); stroke-width: 1; vector-effect: non-scaling-stroke; shape-rendering: crispEdges; fill: none; }
 .today-line { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--today); z-index: 3; pointer-events: none; }
 .lane { position: relative; height: var(--row-h); border-bottom: 1px solid var(--line-soft); }
 .lane.spacer { height: var(--detail-h); }
@@ -270,6 +273,7 @@ body {
   .detail input[type="range"] { width: 76px; }
   .ribbon .info { display: none; }
   .ribbon-group { padding: 0 6px; }
+  .zoom-slider { width: 64px; }
   .titlebar { gap: 10px; }
   .settings-dialog .field { flex-direction: column; align-items: stretch; gap: 4px; }
   .settings-dialog .checks { grid-template-columns: 1fr; }

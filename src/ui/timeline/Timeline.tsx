@@ -1,83 +1,64 @@
 import { useMemo } from "react";
-import { addDays, diffDays } from "../../core/dates";
-import { PALETTE, ZOOMS, type Task } from "../../core/model";
+import { diffDays } from "../../core/dates";
+import { PALETTE, type Task } from "../../core/model";
 import type { Settings } from "../../settings/settings";
 import { formatDate } from "../format";
 import type { RowMetrics } from "../hooks";
 import { LABEL_GAP } from "./arrows";
 import { DependencyArrows } from "./DependencyArrows";
 import { barBox, computeRange } from "./geometry";
-
-let measureCtx: CanvasRenderingContext2D | null | undefined;
-function labelWidth(text: string): number {
-  if (measureCtx === undefined) {
-    try {
-      measureCtx = document.createElement("canvas").getContext("2d");
-    } catch {
-      measureCtx = null; // jsdom: no canvas
-    }
-    if (measureCtx) measureCtx.font = "600 12px " + getComputedStyle(document.body).fontFamily;
-  }
-  return measureCtx ? Math.ceil(measureCtx.measureText(text).width) : text.length * 7;
-}
+import { dayLabelWidth, labelWidth } from "./measure";
+import { avoidSpan, buildTimescale, weekendRects } from "./timescale";
 
 const NO_EXPANDED: ReadonlySet<number> = new Set();
+const isWeekend = (min: Date, dayIndex: number) => [0, 6].includes((min.getDay() + Math.round(dayIndex)) % 7);
 
-export function Timeline({ tasks, expanded, zoom, today, availPx, metrics, settings }: {
-  tasks: Task[]; expanded: ReadonlySet<number>; zoom: number; today: Date;
+/**
+ * Timeline at a given day width `w` (px). Header cells, gridlines and weekend
+ * shading are generated per timescale unit (see timescale.ts), so the DOM size
+ * follows the number of visible units rather than the number of days.
+ */
+export function Timeline({ tasks, expanded, w, today, availPx, metrics, settings }: {
+  tasks: Task[]; expanded: ReadonlySet<number>; w: number; today: Date;
   availPx: number; metrics: RowMetrics; settings: Settings;
 }) {
-  const w = ZOOMS[zoom]!.w;
   const { min, totalDays } = useMemo(
     () => computeRange(tasks, w, availPx, today, labelWidth), [tasks, w, availPx, today],
   );
-  const max = addDays(min, totalDays - 1);
   const fmt = settings.dateFormat;
-
-  const months = useMemo(() => {
-    const out: { key: string; width: number; label: string }[] = [];
-    let cursor = new Date(min);
-    while (cursor <= max) {
-      const mEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0);
-      const to = mEnd < max ? mEnd : max;
-      const span = diffDays(to, cursor) + 1;
-      out.push({
-        key: `${cursor.getFullYear()}-${cursor.getMonth()}`,
-        width: span * w,
-        label: span * w >= 64 ? cursor.toLocaleDateString(undefined, { month: "long", year: "numeric" }) : "",
-      });
-      cursor = addDays(to, 1);
-    }
-    return out;
-  }, [min, max, w]);
-
-  const days = useMemo(() => Array.from({ length: totalDays }, (_, i) => {
-    const d = addDays(min, i);
-    return {
-      i, date: d.getDate(),
-      weekend: d.getDay() === 0 || d.getDay() === 6,
-      today: d.getTime() === today.getTime(),
-      // At small zoom levels only label Mondays and month starts
-      showNum: w >= 20 || d.getDay() === 1 || d.getDate() === 1,
-    };
-  }), [min, totalDays, today, w]);
+  const ts = useMemo(
+    () => buildTimescale(min, totalDays, w, settings.notation, { today, labelWidth, dayLabelWidth }),
+    [min, totalDays, w, settings.notation, today],
+  );
+  const shadeWeekends = ts.weekends && settings.showWeekends;
+  const weekends = useMemo(() => (shadeWeekends ? weekendRects(min, totalDays, w) : []), [shadeWeekends, min, totalDays, w]);
+  const gridPath = useMemo(() => ts.lines.map(x => `M${x + 0.5} 0V1`).join(""), [ts.lines]);
 
   const todayOff = diffDays(today, min);
   const todayX = todayOff * w + w / 2;
   const showToday = settings.showToday && todayOff >= 0 && todayOff < totalDays;
   const width = totalDays * w;
+  // The Today flag sits in the top tier, 4px right of the today line.
+  const flagW = labelWidth("Today") * (10 / 12) + 8;
+  const topCells = useMemo(
+    () => (showToday ? avoidSpan(ts.top, todayX + 4, todayX + 4 + flagW, labelWidth) : ts.top),
+    [ts.top, showToday, todayX, flagW],
+  );
   const arrowProps = { tasks, min, w, rowH: metrics.rowH, detailH: metrics.detailH, width };
 
   return (
     <section className="timeline-pane" aria-label="Timeline" style={{ width }}>
       <div className="timescale">
         <div className="tier">
-          {months.map(m => <div key={m.key} className="month-cell" style={{ width: m.width }}>{m.label}</div>)}
+          {topCells.map(c => (
+            <div key={c.key} className="ts-cell top-cell" style={{ left: c.x, width: c.width, paddingLeft: c.indent ? 6 + c.indent : undefined }}>{c.label}</div>
+          ))}
         </div>
         <div className="tier">
-          {days.map(d => (
-            <div key={d.i} className={`day-cell${d.weekend && settings.showWeekends ? " weekend" : ""}${d.today && settings.showToday ? " today" : ""}`} style={{ width: w }}>
-              {d.showNum ? <span>{d.date}</span> : null}
+          {ts.bottom.map(c => (
+            <div key={c.key} style={{ left: c.x, width: c.width }}
+              className={`ts-cell bottom-cell${ts.dayNumbers ? " day" : ""}${ts.dayNumbers && shadeWeekends && isWeekend(min, c.x / w) ? " weekend" : ""}${c.today && settings.showToday ? " today" : ""}`}>
+              {c.label ? <span>{c.label}</span> : null}
             </div>
           ))}
         </div>
@@ -85,9 +66,10 @@ export function Timeline({ tasks, expanded, zoom, today, availPx, metrics, setti
       </div>
       <div className="tl-body">
         <div className="tl-cols">
-          {days.map(d => (
-            <div key={d.i} className={`day-col${d.weekend && settings.showWeekends ? " weekend" : ""}`} style={{ left: d.i * w, width: w }} />
-          ))}
+          {weekends.map(r => <div key={r.x} className="weekend-col" style={{ left: r.x, width: r.width }} />)}
+          <svg className="gridlines" width={width} height="100%" viewBox={`0 0 ${width} 1`} preserveAspectRatio="none" aria-hidden="true">
+            <path d={gridPath} />
+          </svg>
         </div>
         {showToday && <div className="today-line" style={{ left: todayX }} />}
         {tasks.map(t => {

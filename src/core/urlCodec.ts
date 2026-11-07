@@ -1,5 +1,5 @@
 import {
-  LINK_TYPES, MAX_DURATION, PALETTE, clampZoom,
+  LINK_TYPES, MAX_DURATION, PALETTE, FIT_ZOOM, clampZoomFactor,
   type Link, type Project, type Task,
 } from "./model";
 import { ISO_RE, iso } from "./dates";
@@ -39,9 +39,9 @@ export function sanitizeTask(f: Fields, today: Date): Pick<Task, "n" | "s" | "e"
 
 export function encodeProject(p: Project): string {
   const payload = JSON.stringify({
-    v: 3,
+    v: 4,
     t: p.title,
-    z: p.zoom,
+    zf: p.zoom,
     n: p.nextId,
     tasks: p.tasks.map((t) => {
       const o: Record<string, unknown> = { i: t.id, n: t.n, s: t.s, e: t.e, c: t.c, p: t.p };
@@ -54,7 +54,8 @@ export function encodeProject(p: Project): string {
 
 const isObj = (x: unknown): x is Record<string, unknown> => typeof x === "object" && x !== null;
 
-function decodeV3(o: Record<string, unknown>, rawTasks: unknown[], today: Date): Project {
+/** v3 and v4 share the task/link encoding; they differ only in how zoom is stored. */
+function decodeLinked(o: Record<string, unknown>, rawTasks: unknown[], today: Date, zoom: number): Project {
   const seen = new Set<number>();
   const ids: (number | null)[] = rawTasks.map((r) => {
     const i = isObj(r) ? r.i : undefined;
@@ -101,7 +102,7 @@ function decodeV3(o: Record<string, unknown>, rawTasks: unknown[], today: Date):
   const nextId = Math.max(typeof nRaw === "number" && Number.isSafeInteger(nRaw) ? nRaw : 0, Math.max(maxId, fresh) + 1);
   return {
     title: String(o.t || "My Project"),
-    zoom: clampZoom(o.z),
+    zoom,
     nextId,
     tasks: schedule(tasks),
   };
@@ -115,12 +116,14 @@ export function decodeProject(search: string, today: Date): Project | null {
   try {
     const o: unknown = JSON.parse(b64decode(raw));
     if (isObj(o)) {
-      if (o.v === 3 && Array.isArray(o.tasks)) return decodeV3(o, o.tasks, today);
+      if (o.v === 4 && Array.isArray(o.tasks)) return decodeLinked(o, o.tasks, today, clampZoomFactor(o.zf));
+      // v1–v3 stored a zoom preset index, which has no meaning any more: open at Fit.
+      if (o.v === 3 && Array.isArray(o.tasks)) return decodeLinked(o, o.tasks, today, FIT_ZOOM);
       if (Array.isArray(o.tasks)) {
         const tasks: Task[] = o.tasks.map((r: unknown, i: number) => ({
           id: i + 1, ...sanitizeTask(isObj(r) ? r : {}, today), deps: [],
         }));
-        return { title: String(o.t || "My Project"), zoom: clampZoom(o.z), nextId: tasks.length + 1, tasks };
+        return { title: String(o.t || "My Project"), zoom: FIT_ZOOM, nextId: tasks.length + 1, tasks };
       }
     }
   } catch {
@@ -136,7 +139,7 @@ export function decodeProject(search: string, today: Date): Project | null {
       ...sanitizeTask({ n: f[0], s: f[1], e: f[2], c: f[3], p: f[4] }, today),
       deps: [],
     }));
-    return { title: params.get("t") || "My Project", zoom: clampZoom(params.get("z")), nextId: tasks.length + 1, tasks };
+    return { title: params.get("t") || "My Project", zoom: FIT_ZOOM, nextId: tasks.length + 1, tasks };
   } catch {
     return null;
   }

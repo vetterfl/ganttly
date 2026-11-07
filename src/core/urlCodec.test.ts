@@ -26,7 +26,7 @@ describe("legacy decoding", () => {
       .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
     const p = decodeProject("?d=" + legacy, TODAY)!;
     expect(p.title).toBe("Üni");
-    expect(p.zoom).toBe(4);
+    expect(p.zoom).toBe(1); // v2 zoom preset ignored: Fit
     expect(p.tasks.map((t) => [t.id, t.n, t.s, t.e, t.c, t.p, t.deps.length])).toEqual([
       [1, "Ünïcødé 🚀", "2026-11-02", "2026-11-06", 3, 50, 0],
       [2, "B", "2026-11-07", "2026-11-08", 0, 0, 0],
@@ -50,7 +50,7 @@ describe("garbage", () => {
 });
 
 const sample = (): Project => ({
-  title: "Hello Ünï", zoom: 3, nextId: 10,
+  title: "Hello Ünï", zoom: 2.5, nextId: 10,
   tasks: [
     mk(1, "2026-11-01", "2026-11-05", [], "A"),
     mk(4, "2026-11-06", "2026-11-08", [lk(1)], "B"),
@@ -59,7 +59,7 @@ const sample = (): Project => ({
 });
 const scheduled = () => reducer(sample(), { type: "load", project: sample() });
 
-describe("v3", () => {
+describe("v4", () => {
   it("round-trips ids, nextId, deps", () => {
     const p = scheduled();
     const q = decodeProject(encodeProject(p), TODAY)!;
@@ -68,7 +68,9 @@ describe("v3", () => {
   });
   it("omits d when empty and uses expected shape", () => {
     const json = JSON.parse(b64decode(encodeProject(scheduled()).slice(3)));
-    expect(json.v).toBe(3);
+    expect(json.v).toBe(4);
+    expect(json.zf).toBe(2.5);
+    expect("z" in json).toBe(false);
     expect(json.tasks[0]).toEqual({ i: 1, n: "A", s: "2026-11-01", e: "2026-11-05", c: 0, p: 0 });
     expect(json.tasks[2].d).toEqual([[4, 2, -2], [1, 1, 3]]);
   });
@@ -115,5 +117,23 @@ describe("v3", () => {
     expect(Array.isArray(o.tasks)).toBe(true);
     const old = (o.tasks as Record<string, unknown>[]).map((t) => sanitizeTask(t, TODAY));
     expect(old).toEqual(p.tasks.map((t) => ({ n: t.n, s: t.s, e: t.e, c: t.c, p: t.p })));
+  });
+});
+
+describe("zoom factor (v4) and older links", () => {
+  const tasks = [{ i: 1, n: "A", s: "2026-11-02", e: "2026-11-06", c: 0, p: 0 }, { i: 2, n: "B", s: "2026-11-09", e: "2026-11-10", c: 1, p: 0, d: [[1, 0, 2]] }];
+  it("v4 round-trips zoom 2.5", () => {
+    const p = decodeProject(enc({ v: 4, t: "Z", zf: 2.5, n: 3, tasks }), TODAY)!;
+    expect(p.zoom).toBe(2.5);
+    expect(decodeProject(encodeProject(p), TODAY)).toEqual(p);
+  });
+  it.each([[undefined], ["x"], [0.5], [null], [-3]])("invalid zf %j opens at Fit", (zf) => {
+    expect(decodeProject(enc({ v: 4, t: "Z", zf, n: 3, tasks }), TODAY)!.zoom).toBe(1);
+  });
+  it("v3 with zoom preset 4 opens at Fit, links intact", () => {
+    const p = decodeProject(enc({ v: 3, t: "Old", z: 4, n: 3, tasks }), TODAY)!;
+    expect(p.zoom).toBe(1);
+    expect(p.tasks[1]!.deps).toEqual([lk(1, "FS", 2)]);
+    expect([p.tasks[1]!.s, p.tasks[1]!.e]).toEqual(["2026-11-09", "2026-11-10"]);
   });
 });

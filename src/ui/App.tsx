@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { addDays, iso, parseDate } from "../core/dates";
-import { emptyProject, sampleProject, ZOOMS, type Project } from "../core/model";
+import { emptyProject, sampleProject, type Project } from "../core/model";
 import { reducer } from "../core/reducer";
 import { decodeProject, encodeProject } from "../core/urlCodec";
 import { useSettings } from "../settings/SettingsContext";
@@ -8,9 +8,10 @@ import { formatDateObj } from "./format";
 import { TaskGrid } from "./grid/TaskGrid";
 import { useElementWidth, useRowMetrics } from "./hooks";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { AddTaskIcon, LinkIcon, NewFileIcon, PrintIcon, SettingsIcon } from "./icons";
+import { AddTaskIcon, FitIcon, LinkIcon, NewFileIcon, PrintIcon, SettingsIcon } from "./icons";
 import { SettingsDialog } from "./SettingsDialog";
 import { Timeline } from "./timeline/Timeline";
+import { factorToSlider, SLIDER_MAX, sliderToFactor, useZoom } from "./timeline/useZoom";
 
 function startOfToday(): Date {
   const d = new Date();
@@ -86,16 +87,9 @@ export function App() {
     if (el) { el.focus(); el.select(); }
   }, [tasks]);
 
-  const setZoom = useCallback((z: number) => dispatch({ type: "setZoom", zoom: z }), []);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey)) return;
-      if (e.key === "+" || e.key === "=") { e.preventDefault(); setZoom(zoom + 1); }
-      else if (e.key === "-") { e.preventDefault(); setZoom(zoom - 1); }
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [zoom, setZoom]);
+  const availPx = Math.max(0, workspaceW - gridW - 2);
+  const onZoom = useCallback((z: number) => dispatch({ type: "setZoom", zoom: z }), []);
+  const zoomApi = useZoom({ stored: zoom, onChange: onZoom, tasks, availPx, today, workspaceRef, gridW });
 
   const addTask = () => {
     focusTaskId.current = project.nextId;
@@ -162,9 +156,18 @@ export function App() {
           <button type="button" className="btn" onClick={copyLink} title="Copy a shareable link with all chart data"><LinkIcon />Copy link</button>
         </RibbonGroup>
         <RibbonGroup caption="View">
-          <button type="button" className="btn small" onClick={() => setZoom(zoom - 1)} title="Zoom out (Ctrl/⌘ + −)" aria-label="Zoom out">−</button>
-          <span className="zoom-label" aria-live="polite">{ZOOMS[zoom]!.label}</span>
-          <button type="button" className="btn small" onClick={() => setZoom(zoom + 1)} title="Zoom in (Ctrl/⌘ + +)" aria-label="Zoom in">+</button>
+          <span className="zoom-ctl">
+            <button type="button" className="btn small" onClick={zoomApi.zoomOut} disabled={!zoomApi.canZoomOut}
+              title="Zoom out (Ctrl/⌘ + −)" aria-label="Zoom out">−</button>
+            <input type="range" className="zoom-slider" min={0} max={SLIDER_MAX} step={1} aria-label="Zoom"
+              aria-valuetext={zoomApi.label} disabled={zoomApi.maxZoom <= 1}
+              value={factorToSlider(zoomApi.factor, zoomApi.maxZoom)}
+              onChange={e => zoomApi.setFactor(sliderToFactor(Number(e.target.value), zoomApi.maxZoom))} />
+            <button type="button" className="btn small" onClick={zoomApi.zoomIn} disabled={!zoomApi.canZoomIn}
+              title="Zoom in (Ctrl/⌘ + +, or Ctrl/⌘ + wheel over the chart)" aria-label="Zoom in">+</button>
+            <span className="zoom-label" aria-live="polite">{zoomApi.label}</span>
+          </span>
+          <button type="button" className="btn" onClick={zoomApi.fit} title="Fit the whole project (Ctrl/⌘ + 0)"><FitIcon />Fit</button>
           <button type="button" className="btn" ref={settingsBtn} onClick={() => setSettingsOpen(true)} title="View settings"><SettingsIcon />Settings</button>
         </RibbonGroup>
         <RibbonGroup caption="File">
@@ -182,8 +185,8 @@ export function App() {
       <div className="workspace" ref={workspaceRef}>
         <div className="split">
           <TaskGrid ref={gridRef} tasks={tasks} expanded={expanded} onToggle={toggle} onDelete={remove} dispatch={dispatch} />
-          <Timeline tasks={tasks} expanded={expanded} zoom={zoom} today={today}
-            availPx={Math.max(0, workspaceW - gridW - 2)} metrics={metrics} settings={settings} />
+          <Timeline tasks={tasks} expanded={expanded} w={zoomApi.w} today={today}
+            availPx={availPx} metrics={metrics} settings={settings} />
         </div>
       </div>
 

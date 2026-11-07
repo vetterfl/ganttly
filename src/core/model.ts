@@ -33,7 +33,7 @@ export interface Task {
 
 export interface Project {
   title: string;
-  /** Index into ZOOMS */
+  /** Zoom factor relative to Fit: 1 = whole project fits the timeline, ≥ 1. */
   zoom: number;
   tasks: Task[];
   /** Next id to hand out; always > every task id. */
@@ -45,22 +45,21 @@ export const PALETTE: readonly string[] = [
   "#1f5fd1", "#00897b", "#b26a00", "#c2185b", "#6a1b9a", "#0277bd", "#d84315", "#455a64",
 ];
 
-/** Zoom presets: px per day. */
-export const ZOOMS: readonly { w: number; label: string }[] = [
-  { w: 14, label: "Compact" },
-  { w: 24, label: "Cozy" },
-  { w: 34, label: "Normal" },
-  { w: 52, label: "Large" },
-  { w: 76, label: "Huge" },
-];
-export const DEFAULT_ZOOM = 2;
+/** Widest a single day can get (px); the upper zoom limit. */
+export const MAX_DAY_PX = 120;
+/** Factor applied per zoom-in / zoom-out step. */
+export const ZOOM_STEP = 1.25;
+/** Sanity cap for factors read from links; the effective limit is MAX_DAY_PX. */
+export const MAX_ZOOM_FACTOR = 10000;
+/** Zoom factor of a fitted view. */
+export const FIT_ZOOM = 1;
 
 export const MAX_NAME = 120;
 export const MAX_DURATION = 3650;
 
-export function clampZoom(z: unknown): number {
-  const n = parseInt(String(z));
-  return isNaN(n) ? DEFAULT_ZOOM : Math.min(Math.max(n, 0), ZOOMS.length - 1);
+/** Any non-finite or < 1 value means Fit (1); otherwise capped at MAX_ZOOM_FACTOR. */
+export function clampZoomFactor(z: unknown): number {
+  return typeof z === "number" && Number.isFinite(z) && z >= 1 ? Math.min(z, MAX_ZOOM_FACTOR) : FIT_ZOOM;
 }
 
 /** A task is auto-scheduled iff it has at least one predecessor link. */
@@ -73,7 +72,7 @@ export function sampleProject(today: Date): Project {
   });
   return {
     title: "Website Relaunch",
-    zoom: DEFAULT_ZOOM,
+    zoom: FIT_ZOOM,
     nextId: 8,
     tasks: [
       mk(1, "Research & strategy", -4, 5, 0, 100),
@@ -91,13 +90,13 @@ export const UNTITLED = "Untitled Project";
 
 /** The empty project created by the New command. */
 export function emptyProject(): Project {
-  return { title: UNTITLED, zoom: DEFAULT_ZOOM, tasks: [], nextId: 1 };
+  return { title: UNTITLED, zoom: FIT_ZOOM, tasks: [], nextId: 1 };
 }
 
 /** Reducer actions. Tasks are addressed by stable id. */
 export type Action =
   | { type: "load"; project: Project }
-  /** Replaces everything with an empty "Untitled Project" (default zoom, nextId 1). */
+  /** Replaces everything with an empty "Untitled Project" (Fit zoom, nextId 1). */
   | { type: "newProject" }
   /** `today` is passed in to keep the reducer pure (used when there are no tasks). */
   | { type: "addTask"; today: string }
@@ -112,6 +111,7 @@ export type Action =
   | { type: "setColor"; id: number; color: number }
   | { type: "setProgress"; id: number; pct: number }
   | { type: "setTitle"; title: string }
+  /** Zoom factor; clamped by clampZoomFactor (below 1 / invalid → 1). */
   | { type: "setZoom"; zoom: number }
   /** Replaces the task's links. Rejected (no-op) if it references unknown ids, itself, or creates a cycle. */
   | { type: "setPredecessors"; id: number; links: Link[] };
