@@ -1,6 +1,6 @@
 # Proposal
 
-**Phase 3 of 4.** Apply after `adaptive-timeline-zoom` is archived. Phase 4 (`task-groups`) extends this phase's reordering to move tasks between groups.
+**Phase 3 of 4.** Apply after `working-day-scheduling` is archived (queue: `timeline-drag-pan`, `working-day-scheduling`, then this). Phase 4 (`task-groups`) extends this phase's reordering to move tasks between groups.
 
 ## Why
 

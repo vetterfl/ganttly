@@ -187,7 +187,10 @@ body {
 .grid-empty { padding: 28px 16px; color: var(--ink-soft); text-align: center; }
 
 /* ---------- Timeline pane ---------- */
-.timeline-pane { flex: 1 0 auto; position: relative; background: var(--panel); }
+.timeline-pane { flex: 1 0 auto; position: relative; background: var(--panel); user-select: none; -webkit-user-select: none; }
+/* Drag to pan (useDragPan): grab affordance in the timeline, grabbing while a pan is active */
+.timescale, .tl-body { cursor: grab; }
+.workspace.panning, .workspace.panning * { cursor: grabbing !important; user-select: none !important; -webkit-user-select: none !important; }
 .timescale { position: sticky; top: 0; z-index: 2; background: var(--head-bg); border-bottom: 1px solid var(--line); height: var(--header-h); }
 .tier { position: relative; height: calc(var(--header-h) / 2); overflow: hidden; }
 .tier + .tier { border-top: 1px solid var(--line-soft); }

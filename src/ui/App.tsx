@@ -7,6 +7,7 @@ import { useSettings } from "../settings/SettingsContext";
 import { formatDateObj } from "./format";
 import { TaskGrid } from "./grid/TaskGrid";
 import { useElementWidth, useRowMetrics } from "./hooks";
+import { useDragPan } from "./useDragPan";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { AddTaskIcon, FitIcon, LinkIcon, NewFileIcon, PrintIcon, SettingsIcon } from "./icons";
 import { SettingsDialog } from "./SettingsDialog";
@@ -89,6 +90,7 @@ export function App() {
 
   const availPx = Math.max(0, workspaceW - gridW - 2);
   const onZoom = useCallback((z: number) => dispatch({ type: "setZoom", zoom: z }), []);
+  useDragPan(workspaceRef);
   const zoomApi = useZoom({ stored: zoom, onChange: onZoom, tasks, availPx, today, workspaceRef, gridW });
 
   const addTask = () => {

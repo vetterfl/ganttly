@@ -21,11 +21,15 @@ Tasks SHALL be numbered 1..n in display order across all groups, including tasks
 - **THEN** U is task 1, A1 is task 2 and A2 is task 3, and the header shows no number
 
 ### Requirement: Group header roll-ups
-A group header SHALL show an editable name (up to 120 characters) and, from its tasks: Start = earliest start, Finish = latest finish, Duration = Finish − Start + 1 calendar days, and % Complete = duration-weighted average progress, rounded. A group without tasks SHALL show empty values. Roll-ups SHALL NOT be editable.
+A group header SHALL show an editable name (up to 120 characters) and, from its tasks: Start = earliest start, Finish = latest finish, Duration = Finish − Start + 1 days counted in the project's calendar (calendar days or working days), and % Complete = duration-weighted average progress, rounded. A group without tasks SHALL show empty values. Roll-ups SHALL NOT be editable.
 
 #### Scenario: Span duration
 - **WHEN** group "Acme" has task A (2026-11-02 to 2026-11-06, 50%) and task B (2026-11-10 to 2026-11-12, 100%)
 - **THEN** the header shows Start 2026-11-02, Finish 2026-11-12, Duration 11 days and % Complete 69%
+
+#### Scenario: Span duration in working days
+- **WHEN** the same group is in a working-day project
+- **THEN** the header shows Duration 9 days and % Complete 69%
 
 #### Scenario: Roll-ups follow scheduling
 - **WHEN** a predecessor change pushes task B in "Acme" three days later

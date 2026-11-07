@@ -12,6 +12,7 @@ MS Project–style Gantt charts in the browser — with task dependencies, prede
 - **Dependencies** of all four MS Project types — finish-to-start, start-to-start, finish-to-finish, start-to-finish — with lag or lead in days or weeks, drawn as arrows in the timeline.
 - **Auto-scheduling:** a task with predecessors starts as early as its links allow and keeps its duration. Move a task and everything that depends on it follows.
 - **Zoom that fits any project:** *Fit* (100%) shows the whole project, however long, in the visible timeline. Zoom in from there in fine steps with − / + (×1.25), the zoom slider, Ctrl/⌘ + / −, or Ctrl/⌘ + mouse wheel / trackpad pinch over the chart (the date under the pointer stays put), up to 120 px per day. *Fit* or Ctrl/⌘ 0 goes back. The timescale adapts: days → Mondays → calendar weeks (KW/W) → months → quarters.
+- **Drag to pan:** grab the timeline with the left mouse button (or anywhere with the middle button) and drag to move around the chart, horizontally and vertically.
 - **Shareable links:** *Copy link* puts the entire chart (title, zoom, tasks, links) into a URL. Older Ganttly links keep working; links from before the fit-relative zoom open at *Fit*.
 - **View settings** (per browser, never part of the link): German or English link notation, date format, row density, visible columns and their widths, and toggles for arrows, weekend shading, today marker and progress.
 - Bold colour palette, landscape print layout, works on phones.

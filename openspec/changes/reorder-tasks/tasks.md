@@ -1,6 +1,6 @@
 # Tasks
 
-Prerequisite: `adaptive-timeline-zoom` is applied and archived.
+Prerequisite: `timeline-drag-pan` and `working-day-scheduling` are applied and archived.
 
 ## 1. Core
 

@@ -8,7 +8,7 @@ After phases 1–3:
 - `moveTask { id, toIndex }` reorders.
 - `useRowDrag` computes drop slots from `laneTops`.
 - The grid, timeline and arrows all iterate `tasks` directly and use `laneTops(tasks, expanded, …)`.
-- Link format v4, and `ConfirmDialog` exists.
+- Link format v5 (with the project calendar, from `working-day-scheduling`), and `ConfirmDialog` exists. Day arithmetic goes through `core/calendar.ts`.
 
 Groups introduce rows that are not tasks, plus hidden tasks, so "one row per task" no longer holds.
 
@@ -56,7 +56,7 @@ type Row =
   | { kind: "group"; group: Group; rollup: Rollup | null }
 ```
 
-Tasks of collapsed groups are omitted, but numbers still count them. `rollup(tasks)` computes min start, max finish, span duration, and the duration-weighted %, rounded.
+Tasks of collapsed groups are omitted, but numbers still count them. `rollup(tasks, cal)` computes min start, max finish, the span duration counted in the project's calendar (`finishIdx(max) − startIdx(min) + 1`), and the %, weighted by each task's duration in that calendar, rounded.
 
 The grid, timeline, arrows and drag all consume `rows`. `laneTops(rows, rowH, detailH)` replaces the task-based version: group rows are `rowH`, and tasks are `rowH` plus `detailH` when their detail strip is open. Arrows look up row indexes by task ID, and links with a missing endpoint (hidden task) are skipped.
 
@@ -93,18 +93,18 @@ The grid, timeline, arrows and drag all consume `rows`. `laneTops(rows, rowH, de
 - **Detail strip:** a `<select>` with "(No group)" and the group names, dispatching `setTaskGroup`.
 - **Fit (phase 2):** `fitDayWidth` also accounts for group summary labels.
 
-### 5. Link format v5
+### 5. Link format v6
 
-The format is `{ v:5, t, zf, n, groups:[{ i, n, x?:1 }], tasks:[{ …, g? }] }`.
+The format is `{ v:6, t, zf, n, cal?:1, groups:[{ i, n, x?:1 }], tasks:[{ …, g? }] }`, which is v5 plus groups.
 
 When decoding:
 - Group IDs must be unique positive integers that don't collide with task IDs; otherwise a fresh ID is assigned.
 - A task whose `g` doesn't match a group becomes ungrouped.
 - `nextId` is at least max(all IDs) + 1.
 - `normalizeOrder` runs before `schedule()`.
-- v4 and older decode with `groups: []`.
+- v5 and older decode with `groups: []`.
 
-A v5 link opened by the v4-era build falls back like before: tasks and links load, and groups are ignored.
+A v6 link opened by the v5-era build falls into its legacy path like before (tasks load without links, groups are ignored).
 
 ## Risks / Trade-offs
 
