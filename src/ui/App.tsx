@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { addDays, iso, parseDate } from "../core/dates";
-import { emptyProject, sampleProject, type Project } from "../core/model";
+import { emptyProject, sampleProject, type Project, type SampleNames } from "../core/model";
+import { useI18n } from "../i18n/I18nContext";
+import type { Translate } from "../i18n";
 import { reducer } from "../core/reducer";
 import { decodeProject, encodeProject } from "../core/urlCodec";
 import { useSettings } from "../settings/SettingsContext";
@@ -23,16 +25,18 @@ function startOfToday(): Date {
   return d;
 }
 
-/** The project described by the current URL (sample project when there is none). */
-function projectFromUrl(): Project {
+/** The project described by the current URL (sample project, named in the app language, when there is none). */
+function projectFromUrl(sample: SampleNames): Project {
   const today = startOfToday();
-  return decodeProject(location.search, today) ?? sampleProject(today);
+  return decodeProject(location.search, today) ?? sampleProject(today, sample);
 }
 
-function initProject(): Project {
-  const p = projectFromUrl();
+function initProject(sample: SampleNames): Project {
+  const p = projectFromUrl(sample);
   return reducer(p, { type: "load", project: p });
 }
+
+const sampleNames = (t: Translate): SampleNames => ({ title: t("sample.title"), tasks: t("sample.tasks").split("|") });
 
 function useToast(): [string, boolean, (msg: string) => void] {
   const [msg, setMsg] = useState("");
@@ -48,13 +52,17 @@ function useToast(): [string, boolean, (msg: string) => void] {
 }
 
 export function App() {
-  const [project, dispatch] = useReducer(reducer, undefined, initProject);
+  const { t, locale } = useI18n();
+  const [project, dispatch] = useReducer(reducer, sampleNames(t), initProject);
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(() => new Set());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [confirmNew, setConfirmNew] = useState(false);
   const [toastMsg, toastShown, toast] = useToast();
   const { settings } = useSettings();
   const [today] = useState(startOfToday);
+  // Sample names for the popstate loader (Back to a URL without a project), in the current language.
+  const sampleRef = useRef(sampleNames(t));
+  useEffect(() => { sampleRef.current = sampleNames(t); }, [t]);
 
   const workspaceRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLElement>(null);
@@ -76,12 +84,12 @@ export function App() {
   useEffect(() => {
     const onPop = () => {
       setExpanded(new Set());
-      dispatch({ type: "load", project: projectFromUrl() });
+      dispatch({ type: "load", project: projectFromUrl(sampleRef.current) });
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
-  useEffect(() => { document.title = (title || "Untitled") + " — Ganttly"; }, [title]);
+  useEffect(() => { document.title = (title || t("app.untitled")) + " — Ganttly"; }, [title, t]);
 
   // Focus + select the name of a just-added task or group.
   useEffect(() => {
@@ -123,19 +131,20 @@ export function App() {
     ...rows.flatMap(r => (r.kind === "group" && r.rollup ? [{ s: r.rollup.s, e: r.rollup.e, n: r.group.n }] : [])),
   ], [tasks, rows]);
   const zoomApi = useZoom({ stored: zoom, onChange: onZoom, tasks: spans, availPx, today, workspaceRef, gridW });
+  const zoomLabel = zoomApi.atFit ? t("ribbon.fit") : `${zoomApi.percent}%`;
 
   /** Add a task (to `group`, or ungrouped); a collapsed target group is expanded so the task is visible. */
   const addTaskTo = useCallback((group: number | null) => {
     const g = project.groups.find(x => x.id === group);
     if (g?.collapsed) dispatch({ type: "toggleGroup", id: g.id });
     focusTaskId.current = project.nextId;
-    dispatch({ type: "addTask", today: iso(startOfToday()), group });
-  }, [project.groups, project.nextId]);
+    dispatch({ type: "addTask", today: iso(startOfToday()), group, name: t("default.task") });
+  }, [project.groups, project.nextId, t]);
   // The ribbon's Add task appends to the last group when there are groups.
   const addTask = () => addTaskTo(project.groups.at(-1)?.id ?? null);
   const addGroup = () => {
     focusTaskId.current = project.nextId;
-    dispatch({ type: "addGroup" });
+    dispatch({ type: "addGroup", name: t("default.group") });
   };
 
   // Deleting a group with tasks asks whether to delete them too or keep them ungrouped.
@@ -147,16 +156,16 @@ export function App() {
   const deleteGroup = (withTasks: boolean) => {
     if (deleteGroupId === null) return;
     dispatch({ type: "deleteGroup", id: deleteGroupId, withTasks });
-    toast(withTasks ? "Group and its tasks deleted" : "Group deleted, tasks kept");
+    toast(t(withTasks ? "toast.groupAndTasksDeleted" : "toast.groupDeleted"));
     setDeleteGroupId(null);
   };
   const delGroup = project.groups.find(g => g.id === deleteGroupId);
   const delCount = project.tasks.filter(t => t.g === deleteGroupId).length;
   const newProject = () => {
     setConfirmNew(false);
-    history.pushState(null, "", location.pathname + encodeProject(emptyProject()));
+    history.pushState(null, "", location.pathname + encodeProject(emptyProject(t("app.untitled"))));
     setExpanded(new Set());
-    dispatch({ type: "newProject" });
+    dispatch({ type: "newProject", title: t("app.untitled") });
   };
   const requestNew = () => {
     if (tasks.length) setConfirmNew(true);
@@ -171,8 +180,8 @@ export function App() {
   const remove = useCallback((id: number) => {
     setExpanded(prev => { const next = new Set(prev); next.delete(id); return next; });
     dispatch({ type: "deleteTask", id });
-    toast("Task deleted");
-  }, [toast]);
+    toast(t("toast.taskDeleted"));
+  }, [toast, t]);
 
   const copyLink = async () => {
     const url = location.origin + location.pathname + encodeProject(project);
@@ -186,57 +195,59 @@ export function App() {
       document.execCommand("copy");
       ta.remove();
     }
-    toast("Shareable link copied to clipboard 🔗");
+    toast(t("toast.linkCopied"));
   };
 
   const subtitle = useMemo(() => {
-    if (!tasks.length) return "No tasks";
-    const s = tasks.reduce((m, t) => (t.s < m ? t.s : m), tasks[0]!.s);
-    const e = tasks.reduce((m, t) => (t.e > m ? t.e : m), tasks[0]!.e);
+    if (!tasks.length) return t("app.subtitle.none");
+    const s = tasks.reduce((m, x) => (x.s < m ? x.s : m), tasks[0]!.s);
+    const e = tasks.reduce((m, x) => (x.e > m ? x.e : m), tasks[0]!.e);
     const f = settings.dateFormat;
-    return `${formatDateObj(addDays(parseDate(s), -2), f)} — ${formatDateObj(addDays(parseDate(e), 3), f)} · ${tasks.length} task${tasks.length > 1 ? "s" : ""}`;
-  }, [tasks, settings.dateFormat]);
+    return t("app.subtitle", {
+      from: formatDateObj(addDays(parseDate(s), -2), f, locale), to: formatDateObj(addDays(parseDate(e), 3), f, locale), n: tasks.length,
+    });
+  }, [tasks, settings.dateFormat, locale, t]);
 
   return (
     <div className={`app density-${settings.density}`}>
       <header className="titlebar">
         <div className="logo"><span className="mark" />Ganttly</div>
-        <input className="project-title" type="text" value={title} maxLength={80} aria-label="Project title"
+        <input className="project-title" type="text" value={title} maxLength={80} aria-label={t("app.projectTitle")}
           onChange={e => dispatch({ type: "setTitle", title: e.target.value })} />
       </header>
 
-      <nav className="ribbon" aria-label="Commands">
-        <RibbonGroup caption="Task">
-          <button type="button" className="btn" onClick={addTask} title="Add a new task (to the last group, if there are groups)"><AddTaskIcon />Add task</button>
-          <button type="button" className="btn" onClick={addGroup} title="Add a group (section header)"><AddGroupIcon />Add group</button>
+      <nav className="ribbon" aria-label={t("app.commands")}>
+        <RibbonGroup id="task" caption={t("ribbon.task")}>
+          <button type="button" className="btn" onClick={addTask} title={t("ribbon.addTask.title")}><AddTaskIcon />{t("ribbon.addTask")}</button>
+          <button type="button" className="btn" onClick={addGroup} title={t("ribbon.addGroup.title")}><AddGroupIcon />{t("ribbon.addGroup")}</button>
         </RibbonGroup>
-        <RibbonGroup caption="Share">
-          <button type="button" className="btn" onClick={copyLink} title="Copy a shareable link with all chart data"><LinkIcon />Copy link</button>
+        <RibbonGroup id="share" caption={t("ribbon.share")}>
+          <button type="button" className="btn" onClick={copyLink} title={t("ribbon.copyLink.title")}><LinkIcon />{t("ribbon.copyLink")}</button>
         </RibbonGroup>
-        <RibbonGroup caption="View">
+        <RibbonGroup id="view" caption={t("ribbon.view")}>
           <span className="zoom-ctl">
             <button type="button" className="btn small" onClick={zoomApi.zoomOut} disabled={!zoomApi.canZoomOut}
-              title="Zoom out (Ctrl/⌘ + −)" aria-label="Zoom out">−</button>
-            <input type="range" className="zoom-slider" min={0} max={SLIDER_MAX} step={1} aria-label="Zoom"
-              aria-valuetext={zoomApi.label} disabled={zoomApi.maxZoom <= 1}
+              title={t("ribbon.zoomOut.title")} aria-label={t("ribbon.zoomOut")}>−</button>
+            <input type="range" className="zoom-slider" min={0} max={SLIDER_MAX} step={1} aria-label={t("ribbon.zoom")}
+              aria-valuetext={zoomLabel} disabled={zoomApi.maxZoom <= 1}
               value={factorToSlider(zoomApi.factor, zoomApi.maxZoom)}
               onChange={e => zoomApi.setFactor(sliderToFactor(Number(e.target.value), zoomApi.maxZoom))} />
             <button type="button" className="btn small" onClick={zoomApi.zoomIn} disabled={!zoomApi.canZoomIn}
-              title="Zoom in (Ctrl/⌘ + +, or Ctrl/⌘ + wheel over the chart)" aria-label="Zoom in">+</button>
-            <span className="zoom-label" aria-live="polite">{zoomApi.label}</span>
+              title={t("ribbon.zoomIn.title")} aria-label={t("ribbon.zoomIn")}>+</button>
+            <span className="zoom-label" aria-live="polite">{zoomLabel}</span>
           </span>
-          <button type="button" className="btn" onClick={zoomApi.fit} title="Fit the whole project (Ctrl/⌘ + 0)"><FitIcon />Fit</button>
-          <button type="button" className="btn" ref={settingsBtn} onClick={() => setSettingsOpen(true)} title="View settings"><SettingsIcon />Settings</button>
+          <button type="button" className="btn" onClick={zoomApi.fit} title={t("ribbon.fit.title")}><FitIcon />{t("ribbon.fit")}</button>
+          <button type="button" className="btn" ref={settingsBtn} onClick={() => setSettingsOpen(true)} title={t("ribbon.settings.title")}><SettingsIcon />{t("ribbon.settings")}</button>
         </RibbonGroup>
-        <RibbonGroup caption="File">
-          <button type="button" className="btn" ref={newBtn} onClick={requestNew} title="Start a new, empty project"><NewFileIcon />New</button>
-          <button type="button" className="btn" onClick={() => window.print()} title="Print the chart"><PrintIcon />Print</button>
+        <RibbonGroup id="file" caption={t("ribbon.file")}>
+          <button type="button" className="btn" ref={newBtn} onClick={requestNew} title={t("ribbon.new.title")}><NewFileIcon />{t("ribbon.new")}</button>
+          <button type="button" className="btn" onClick={() => window.print()} title={t("ribbon.print.title")}><PrintIcon />{t("ribbon.print")}</button>
         </RibbonGroup>
         <div className="info">{subtitle}</div>
       </nav>
 
       <div className="print-only print-head">
-        <h1>{title || "Untitled Project"}</h1>
+        <h1>{title || t("app.untitled")}</h1>
         <p>{subtitle}</p>
       </div>
 
@@ -251,17 +262,17 @@ export function App() {
 
       <div className={`toast${toastShown ? " show" : ""}`} role="status">{toastMsg}</div>
       <ConfirmDialog
-        open={confirmNew} title="Start a new project?" returnFocusRef={newBtn}
-        message={<>This replaces “{title || "Untitled Project"}” and its {tasks.length} task{tasks.length === 1 ? "" : "s"} with an empty project. You can get it back with the browser’s Back button.</>}
-        actions={[{ label: "New project", danger: true, onConfirm: newProject }]}
+        open={confirmNew} title={t("dialog.new.title")} returnFocusRef={newBtn}
+        message={t("dialog.new.message", { title: title || t("app.untitled"), n: tasks.length })}
+        actions={[{ label: t("dialog.new.confirm"), danger: true, onConfirm: newProject }]}
         onCancel={() => setConfirmNew(false)}
       />
       <ConfirmDialog
-        open={deleteGroupId !== null} title="Delete group?"
-        message={<>“{delGroup?.n || "Unnamed group"}” contains {delCount} task{delCount === 1 ? "" : "s"}. Delete them too, or keep them as ungrouped tasks?</>}
+        open={deleteGroupId !== null} title={t("dialog.deleteGroup.title")}
+        message={t("dialog.deleteGroup.message", { name: delGroup?.n || t("group.unnamed"), n: delCount })}
         actions={[
-          { label: "Keep tasks (ungroup)", onConfirm: () => deleteGroup(false) },
-          { label: `Delete group and ${delCount} task${delCount === 1 ? "" : "s"}`, danger: true, onConfirm: () => deleteGroup(true) },
+          { label: t("dialog.deleteGroup.keep"), onConfirm: () => deleteGroup(false) },
+          { label: t("dialog.deleteGroup.delete", delCount), danger: true, onConfirm: () => deleteGroup(true) },
         ]}
         onCancel={() => setDeleteGroupId(null)}
       />
@@ -271,8 +282,8 @@ export function App() {
   );
 }
 
-function RibbonGroup({ caption, children }: { caption: string; children: React.ReactNode }) {
-  const id = `cap-${caption.toLowerCase()}`;
+function RibbonGroup({ id: key, caption, children }: { id: string; caption: string; children: React.ReactNode }) {
+  const id = `cap-${key}`;
   return (
     <div className="ribbon-group" role="group" aria-labelledby={id}>
       <div className="cmds">{children}</div>

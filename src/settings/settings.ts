@@ -1,6 +1,11 @@
 // Per-browser view settings. Stored in localStorage, never in share links.
 
-export type Notation = "de" | "en";
+import { LANG_CODES, type LangCode } from "../i18n";
+
+/** Predecessor notation; "auto" follows the app language (German app → German notation, otherwise English). */
+export type Notation = "auto" | "de" | "en";
+/** App language; "auto" = the browser's first supported language (see i18n resolveLanguage). */
+export type LanguagePref = "auto" | LangCode;
 export type DateFormat = "locale" | "iso" | "dmy";
 export type Density = "compact" | "comfortable";
 
@@ -36,6 +41,7 @@ export function clampColumnWidth(col: ResizableCol, w: number): number {
 export type ColumnWidths = Partial<Record<ResizableCol, number>>;
 
 export interface Settings {
+  language: LanguagePref;
   notation: Notation;
   dateFormat: DateFormat;
   density: Density;
@@ -50,7 +56,8 @@ export interface Settings {
 export const STORAGE_KEY = "ganttly.settings.v1";
 
 export const DEFAULT_SETTINGS: Settings = Object.freeze({
-  notation: "de",
+  language: "auto",
+  notation: "auto",
   dateFormat: "locale",
   density: "compact",
   columns: Object.freeze({ duration: true, start: true, finish: true, pct: true, preds: true }),
@@ -77,7 +84,8 @@ export function mergeSettings(raw: unknown): Settings {
     if (typeof v === "number" && Number.isFinite(v)) columnWidths[k] = clampColumnWidth(k, v);
   }
   return {
-    notation: oneOf(o.notation, ["de", "en"] as const, d.notation),
+    language: oneOf(o.language, ["auto", ...LANG_CODES] as const, d.language),
+    notation: oneOf(o.notation, ["auto", "de", "en"] as const, d.notation),
     dateFormat: oneOf(o.dateFormat, ["locale", "iso", "dmy"] as const, d.dateFormat),
     density: oneOf(o.density, ["compact", "comfortable"] as const, d.density),
     columns: {
@@ -119,4 +127,10 @@ export function saveSettings(s: Settings, storage: Storage | null = getStorage()
   } catch {
     /* storage unavailable: settings live for this session only */
   }
+}
+
+/** The notation actually used: an explicit choice, or the one matching the app language. */
+export function effectiveNotation(n: Notation, lang: LangCode): "de" | "en" {
+  if (n !== "auto") return n;
+  return lang === "de" ? "de" : "en";
 }

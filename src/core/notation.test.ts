@@ -100,3 +100,17 @@ describe("weeks follow the project calendar", () => {
     expect(parsePredecessors("3EE-2Wochen; 4+3T", six, 60, "workdays")).toEqual({ ok: true, links: [lk(30, "FF", -10), lk(40, "FS", 3)] });
   });
 });
+
+describe("error params for the UI's own wording", () => {
+  const err = (t: string) => { const r = parse(t); if (r.ok) throw new Error("expected error"); return r.error; };
+  it("carry kind and parameters", () => {
+    expect([err("3XX").kind, err("3XX").params]).toEqual(["syntax", { entry: "3XX" }]);
+    expect([err("9").kind, err("9").params]).toEqual(["unknown", { row: "9" }]);
+    expect([err("6").kind, err("6").params]).toEqual(["self", {}]);
+  });
+  it("cycle lists the rows and the task itself", () => {
+    const tasks = [mk(1, "2026-11-01", "2026-11-02"), mk(2, "2026-11-03", "2026-11-04", [lk(1)])];
+    const r = parsePredecessors("2", tasks, 1);
+    expect(!r.ok && r.error.params).toEqual({ rows: "2", me: 1 });
+  });
+});

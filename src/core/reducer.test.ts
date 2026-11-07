@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { reducer } from "./reducer";
 import { lk, mk } from "./helpers.testutil";
-import { MAX_NAME, type Project } from "./model";
+import { MAX_NAME, sampleProject, type Project } from "./model";
 import { formatPredecessors } from "./notation";
 import { decodeProject, encodeProject } from "./urlCodec";
 import { displayRows } from "./groups";
@@ -332,5 +332,24 @@ describe("groups", () => {
   it("tasks referencing a deleted group can't survive normalisation", () => {
     const p = reducer(base(), { type: "moveTask", id: 1, toIndex: 3, group: 99 });
     expect(p).toEqual(base());
+  });
+});
+
+describe("default names passed in by the UI", () => {
+  it("addTask / addGroup / newProject use the given names (truncated); English otherwise", () => {
+    let p = reducer(proj(), { type: "addTask", today: TODAY, name: "Neuer Vorgang" });
+    expect(p.tasks.at(-1)!.n).toBe("Neuer Vorgang");
+    p = reducer(p, { type: "addGroup", name: "Neue Gruppe" });
+    expect(p.groups.at(-1)!.n).toBe("Neue Gruppe");
+    expect(reducer(p, { type: "addGroup" }).groups.at(-1)!.n).toBe("New group");
+    expect(reducer(p, { type: "newProject", title: "Unbenanntes Projekt" }).title).toBe("Unbenanntes Projekt");
+    expect(reducer(p, { type: "newProject" }).title).toBe("Untitled Project");
+    expect(reducer(proj(), { type: "addTask", today: TODAY, name: "x".repeat(300) }).tasks.at(-1)!.n).toHaveLength(MAX_NAME);
+  });
+  it("sampleProject takes localized names", () => {
+    const s = sampleProject(new Date(2026, 10, 7), { title: "Website-Relaunch", tasks: ["A", "B", "C", "D", "E", "F", "G"] });
+    expect(s.title).toBe("Website-Relaunch");
+    expect(s.tasks.map(t => t.n)).toEqual(["A", "B", "C", "D", "E", "F", "G"]);
+    expect(sampleProject(new Date(2026, 10, 7)).tasks[0]!.n).toBe("Research & strategy");
   });
 });

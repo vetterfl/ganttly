@@ -3,6 +3,7 @@ import { durationIn } from "../../core/calendar";
 import { ISO_RE } from "../../core/dates";
 import { MAX_DURATION, type Action, type Calendar, type Task } from "../../core/model";
 import type { DateFormat } from "../../settings/settings";
+import { useI18n } from "../../i18n/I18nContext";
 import { formatDate } from "../format";
 import { LinkedIcon } from "../icons";
 
@@ -14,10 +15,11 @@ export function DateCell({ value, label, fmt, onCommit }: {
   value: string; label: string; fmt: DateFormat; onCommit: (iso: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
-  const shown = formatDate(value, fmt);
+  const { t, locale } = useI18n();
+  const shown = formatDate(value, fmt, locale);
   if (!editing) {
     return (
-      <button type="button" className="date-text" aria-label={`${label}: ${shown}. Edit`} title={shown} onClick={() => setEditing(true)}>
+      <button type="button" className="date-text" aria-label={t("grid.editDate", { label, date: shown })} title={shown} onClick={() => setEditing(true)}>
         <span className="txt">{shown}</span>
       </button>
     );
@@ -34,9 +36,11 @@ export function DateCell({ value, label, fmt, onCommit }: {
 
 /** Start of an auto-scheduled task: read-only, marked as computed. */
 export function ComputedDate({ value, fmt }: { value: string; fmt: DateFormat }) {
+  const { t, locale } = useI18n();
+  const shown = formatDate(value, fmt, locale);
   return (
-    <span className="date-text computed" title={`${formatDate(value, fmt)} · calculated from predecessors`} aria-readonly="true">
-      <LinkedIcon /><span className="txt">{formatDate(value, fmt)}</span>
+    <span className="date-text computed" title={t("grid.computed", shown)} aria-readonly="true">
+      <LinkedIcon /><span className="txt">{shown}</span>
     </span>
   );
 }
@@ -47,7 +51,8 @@ export function DurationInput({ task, dispatch, calendar, className = "cell-inpu
 }) {
   const [draft, setDraft] = useState<string | null>(null);
   const dur = String(durationIn(task, calendar));
-  const label = calendar === "workdays" ? "Duration in working days (Mon–Fri)" : "Duration in days";
+  const { t } = useI18n();
+  const label = t(calendar === "workdays" ? "unit.workdays.title" : "unit.days.title");
   return (
     <input
       type="number" className={className} min={1} max={MAX_DURATION} step={1}

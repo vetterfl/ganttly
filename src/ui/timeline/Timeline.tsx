@@ -4,6 +4,7 @@ import type { Row } from "../../core/groups";
 import { PALETTE } from "../../core/model";
 import type { Settings } from "../../settings/settings";
 import { formatDate } from "../format";
+import { useI18n } from "../../i18n/I18nContext";
 import type { RowMetrics } from "../hooks";
 import { LABEL_GAP } from "./arrows";
 import { DependencyArrows } from "./DependencyArrows";
@@ -32,9 +33,13 @@ export function Timeline({ spans, rows, w, today, availPx, metrics, settings, dr
     () => computeRange(spans, w, availPx, today, labelWidth), [spans, w, availPx, today],
   );
   const fmt = settings.dateFormat;
+  const { t, locale } = useI18n();
   const ts = useMemo(
-    () => buildTimescale(min, totalDays, w, settings.notation, { today, labelWidth, dayLabelWidth }),
-    [min, totalDays, w, settings.notation, today],
+    () => buildTimescale(min, totalDays, w, {
+      today, labelWidth, dayLabelWidth, locale,
+      weekLabel: n => [t("timeline.week", n), t("timeline.weekShort", n)],
+    }),
+    [min, totalDays, w, today, locale, t],
   );
   const shadeWeekends = ts.weekends && settings.showWeekends;
   const weekends = useMemo(() => (shadeWeekends ? weekendRects(min, totalDays, w) : []), [shadeWeekends, min, totalDays, w]);
@@ -45,7 +50,7 @@ export function Timeline({ spans, rows, w, today, availPx, metrics, settings, dr
   const showToday = settings.showToday && todayOff >= 0 && todayOff < totalDays;
   const width = totalDays * w;
   // The Today flag sits in the top tier, 4px right of the today line.
-  const flagW = labelWidth("Today") * (10 / 12) + 8;
+  const flagW = labelWidth(t("timeline.today")) * (10 / 12) + 8;
   const topCells = useMemo(
     () => (showToday ? avoidSpan(ts.top, todayX + 4, todayX + 4 + flagW, labelWidth) : ts.top),
     [ts.top, showToday, todayX, flagW],
@@ -55,7 +60,7 @@ export function Timeline({ spans, rows, w, today, availPx, metrics, settings, dr
   const printRows = useMemo(() => rows.map(r => (r.kind === "task" && r.detail ? { ...r, detail: false } : r)), [rows]);
 
   return (
-    <section className="timeline-pane" aria-label="Timeline" style={{ width }}>
+    <section className="timeline-pane" aria-label={t("timeline.label")} style={{ width }}>
       <div className="timescale">
         <div className="tier">
           {topCells.map(c => (
@@ -70,7 +75,7 @@ export function Timeline({ spans, rows, w, today, availPx, metrics, settings, dr
             </div>
           ))}
         </div>
-        {showToday && <div className="today-flag" style={{ left: todayX }}>Today</div>}
+        {showToday && <div className="today-flag" style={{ left: todayX }}>{t("timeline.today")}</div>}
       </div>
       <div className="tl-body">
         <div className="tl-cols">
@@ -90,7 +95,7 @@ export function Timeline({ spans, rows, w, today, availPx, metrics, settings, dr
                 {ru && box && (
                   <>
                     <div className="summary-bar" data-group-id={r.group.id}
-                      title={`${r.group.n} · ${formatDate(ru.s, fmt)} → ${formatDate(ru.e, fmt)} · ${ru.p}% complete`}
+                      title={t("timeline.tip", { name: r.group.n, from: formatDate(ru.s, fmt, locale), to: formatDate(ru.e, fmt, locale), pct: ru.p })}
                       style={{ left: box.left, width: box.width }} />
                     <span className="bar-label group-label" style={{ left: box.right + LABEL_GAP }}>{r.group.n}</span>
                   </>
@@ -98,16 +103,16 @@ export function Timeline({ spans, rows, w, today, availPx, metrics, settings, dr
               </div>
             );
           }
-          const t = r.task;
-          const box = barBox(t, min, w);
-          const tip = `${t.n} · ${formatDate(t.s, fmt)} → ${formatDate(t.e, fmt)} · ${t.p}% complete`;
+          const task = r.task;
+          const box = barBox(task, min, w);
+          const tip = t("timeline.tip", { name: task.n, from: formatDate(task.s, fmt, locale), to: formatDate(task.e, fmt, locale), pct: task.p });
           return (
-            <Lane key={t.id} spacer={r.detail}>
-              <div className="bar" data-task-id={t.id} title={tip}
-                style={{ left: box.left, width: box.width, background: PALETTE[t.c] ?? PALETTE[0] }}>
-                {settings.showProgress && t.p > 0 && <div className="fill" style={{ width: `${t.p}%` }} />}
+            <Lane key={task.id} spacer={r.detail}>
+              <div className="bar" data-task-id={task.id} title={tip}
+                style={{ left: box.left, width: box.width, background: PALETTE[task.c] ?? PALETTE[0] }}>
+                {settings.showProgress && task.p > 0 && <div className="fill" style={{ width: `${task.p}%` }} />}
               </div>
-              <span className="bar-label" style={{ left: box.right + LABEL_GAP }}>{t.n}</span>
+              <span className="bar-label" style={{ left: box.right + LABEL_GAP }}>{task.n}</span>
             </Lane>
           );
         })}

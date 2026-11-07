@@ -59,7 +59,7 @@ function apply(project: Project, action: Action): Project {
       return { ...action.project, tasks: schedule(action.project.tasks, action.project.calendar) };
 
     case "newProject":
-      return emptyProject();
+      return emptyProject(action.title?.slice(0, MAX_NAME) || undefined);
 
     case "addTask": {
       if (!validIso(action.today) || !groupExists(project, action.group)) return project;
@@ -69,7 +69,7 @@ function apply(project: Project, action: Action): Project {
       // The day after the latest finish (or today, when there are no tasks), in project days.
       const si = project.tasks.length ? ops.finishIdx(last) + 1 : ops.startIdx(last);
       const task: Task = withGroup({
-        id: project.nextId, n: "New task", s: ops.toIso(si), e: ops.toIso(si + 4),
+        id: project.nextId, n: (action.name || "New task").slice(0, MAX_NAME), s: ops.toIso(si), e: ops.toIso(si + 4),
         c: project.tasks.length % PALETTE.length, p: 0, deps: [],
       }, action.group);
       return withTasks(project, [...project.tasks, task], { nextId: project.nextId + 1 });
@@ -132,7 +132,7 @@ function apply(project: Project, action: Action): Project {
     }
 
     case "addGroup": {
-      const group = { id: project.nextId, n: "New group", collapsed: false };
+      const group = { id: project.nextId, n: (action.name || "New group").slice(0, MAX_NAME), collapsed: false };
       return { ...project, groups: [...project.groups, group], nextId: project.nextId + 1 };
     }
 

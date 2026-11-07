@@ -7,7 +7,10 @@ export type ParseErrorKind = "syntax" | "unknown" | "self" | "cycle";
 export interface ParseError {
   kind: ParseErrorKind;
   entry: string;
+  /** English text, for debugging and tests; the UI phrases errors itself from kind + params. */
   message: string;
+  /** syntax: { entry }, unknown: { row }, self: {}, cycle: { rows, me } — for the UI's own wording. */
+  params: { entry?: string; row?: string; rows?: string; me?: number };
 }
 export type ParseResult = { ok: true; links: Link[] } | { ok: false; error: ParseError };
 
@@ -23,9 +26,9 @@ export const weekDays = (cal: Calendar): number => (cal === "workdays" ? 5 : 7);
 
 /** Lags are in project days (calendar or working days); a week is `weekDays(cal)`. */
 export function parsePredecessors(text: string, tasks: Task[], taskId: number, cal: Calendar = "days"): ParseResult {
-  const fail = (kind: ParseErrorKind, entry: string, message: string): ParseResult => ({
+  const fail = (kind: ParseErrorKind, entry: string, message: string, params: ParseError["params"] = {}): ParseResult => ({
     ok: false,
-    error: { kind, entry, message },
+    error: { kind, entry, message, params },
   });
   const byPred = new Map<number, Link>();
   const entries = text.split(/[;,]/).map((s) => s.trim()).filter((s) => s !== "");
@@ -33,11 +36,11 @@ export function parsePredecessors(text: string, tasks: Task[], taskId: number, c
     const m = ENTRY_RE.exec(entry);
     const unit = m ? (m[5] ?? "").toLowerCase() : "";
     if (!m || !(DAY_UNITS.has(unit) || WEEK_UNITS.has(unit)) || (m[3] === undefined && m[5] !== undefined)) {
-      return fail("syntax", entry, `Invalid entry "${entry}"`);
+      return fail("syntax", entry, `Invalid entry "${entry}"`, { entry });
     }
     const row = Number(m[1]);
     const target = tasks[row - 1];
-    if (!target) return fail("unknown", entry, `Task ${m[1]} does not exist`);
+    if (!target) return fail("unknown", entry, `Task ${m[1]} does not exist`, { row: m[1] });
     if (target.id === taskId) return fail("self", entry, "A task cannot depend on itself");
     const type = m[2] ? (TYPE_MAP[m[2].toLowerCase()] as LinkType) : "FS";
     let lag = 0;
@@ -58,6 +61,7 @@ export function parsePredecessors(text: string, tasks: Task[], taskId: number, c
       "cycle",
       rows.join(", "),
       `Circular dependency: task ${rows.join(", ")} already depends on task ${me}`,
+      { rows: rows.join(", "), me },
     );
   }
   return { ok: true, links };

@@ -1,7 +1,9 @@
 import { forwardRef, useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type Dispatch, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
 import { moveTarget, type MoveTarget, type Row, type Rollup } from "../../core/groups";
+import { durationIn } from "../../core/calendar";
 import { isAuto, MAX_NAME, PALETTE, type Action, type Calendar, type Group, type Task } from "../../core/model";
 import { formatDate } from "../format";
+import { useI18n } from "../../i18n/I18nContext";
 import type { DragItem } from "./useRowDrag";
 import { useSettings } from "../../settings/SettingsContext";
 import type { ResizableCol } from "../../settings/settings";
@@ -88,28 +90,30 @@ export const TaskGrid = forwardRef<HTMLElement, GridProps>(function TaskGrid(
   const groupCount = rows.reduce((n, r) => n + (r.kind === "group" ? 1 : 0), 0);
   let groupIndex = -1;
 
-  const head = (col: ResizableCol, label: string, className?: string): ReactNode => (
-    <div className={className} data-col={col}>
+  const { t } = useI18n();
+  /** Header cell; `full` is the unabbreviated name (tooltip and resize label) when the label is shortened. */
+  const head = (col: ResizableCol, label: string, className?: string, full = label): ReactNode => (
+    <div className={className} data-col={col} title={full !== label ? full : undefined}>
       <span className="head-label">{label}</span>
-      <ColumnResizer col={col} label={label} cols={cols} widths={widths} paneRef={paneRef} onCommit={commitWidth} />
+      <ColumnResizer col={col} label={full} cols={cols} widths={widths} paneRef={paneRef} onCommit={commitWidth} />
     </div>
   );
 
   return (
-    <section className={`grid-pane${cols.preds ? "" : " no-preds"}`} ref={setRefs} aria-label="Task table" style={gridColumnVars(cols, widths) as CSSProperties}>
+    <section className={`grid-pane${cols.preds ? "" : " no-preds"}`} ref={setRefs} aria-label={t("grid.label")} style={gridColumnVars(cols, widths) as CSSProperties}>
       <div className="grid-head" role="row">
-        <div data-col="id">ID</div>
-        <div data-col="toggle" aria-label="Expand" />
-        {head("name", "Task Name")}
-        {cols.duration && head("duration", "Duration", "c-dur")}
-        {cols.start && head("start", "Start", "c-start")}
-        {cols.finish && head("finish", "Finish", "c-fin")}
-        {cols.pct && head("pct", "% Complete", "c-pct")}
-        {cols.preds && head("preds", "Predecessors", "c-preds")}
+        <div data-col="id">{t("grid.id")}</div>
+        <div data-col="toggle" aria-label={t("grid.expand")} />
+        {head("name", t("grid.name"))}
+        {cols.duration && head("duration", t("grid.duration"), "c-dur")}
+        {cols.start && head("start", t("grid.start"), "c-start")}
+        {cols.finish && head("finish", t("grid.finish"), "c-fin")}
+        {cols.pct && head("pct", t("grid.pct"), "c-pct", t("grid.pct.title"))}
+        {cols.preds && head("preds", t("grid.preds"), "c-preds")}
       </div>
       <div className="grid-body">
         {tasks.length === 0 ? (
-          <div className="grid-empty">No tasks yet — use <b>Add task</b> in the ribbon to start your plan.</div>
+          <div className="grid-empty">{t("grid.empty.before")} <b>{t("ribbon.addTask")}</b> {t("grid.empty.after")}</div>
         ) : (
           rows.map(r => r.kind === "group" ? (
             <GroupRow key={`g${r.group.id}`} group={r.group} rollup={r.rollup} index={++groupIndex} count={groupCount}
@@ -146,6 +150,7 @@ function GroupRow({ group: g, rollup, index, count, calendar, dispatch, onMove, 
   const { settings } = useSettings();
   const cols = settings.columns;
   const fmt = settings.dateFormat;
+  const { t, locale } = useI18n();
   const [menu, setMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -162,8 +167,8 @@ function GroupRow({ group: g, rollup, index, count, calendar, dispatch, onMove, 
     const to = index + (e.key === "ArrowUp" ? -1 : 1);
     if (to >= 0 && to < count) onMove(g.id, to, e.target as Element);
   };
-  const unit = calendar === "workdays" ? "wdays" : "days";
-  const label = g.n || "Unnamed group";
+  const unit = rollup ? t(calendar === "workdays" ? "unit.workdays" : "unit.days", rollup.d) : "";
+  const label = g.n || t("group.unnamed");
   const menuItem = (text: string, run: () => void, disabled = false) => (
     <button type="button" role="menuitem" disabled={disabled} onClick={() => { setMenu(false); run(); }}>{text}</button>
   );
@@ -172,18 +177,18 @@ function GroupRow({ group: g, rollup, index, count, calendar, dispatch, onMove, 
       data-group-id={g.id} onKeyDown={onKeyDown}>
       <div className="cell-id">
         {onGripDown && (
-          <span className="grip" aria-hidden="true" title="Drag to move the group" onPointerDown={e => onGripDown(e, { kind: "group", id: g.id })} />
+          <span className="grip" aria-hidden="true" title={t("group.drag")} onPointerDown={e => onGripDown(e, { kind: "group", id: g.id })} />
         )}
       </div>
       <div className="cell-toggle">
         <button type="button" className="toggle" aria-expanded={!g.collapsed}
-          aria-label={`${g.collapsed ? "Expand" : "Collapse"} group ${label}`} title={g.collapsed ? "Expand group" : "Collapse group"}
+          aria-label={t(g.collapsed ? "group.expand" : "group.collapse", label)} title={t(g.collapsed ? "group.expand.title" : "group.collapse.title")}
           onClick={() => dispatch({ type: "toggleGroup", id: g.id })}>
           <ChevronIcon />
         </button>
       </div>
       <div data-col="name">
-        <input type="text" className="cell-input group-name-input" value={g.n} maxLength={MAX_NAME} aria-label="Group name" title={g.n}
+        <input type="text" className="cell-input group-name-input" value={g.n} maxLength={MAX_NAME} aria-label={t("group.name")} title={g.n}
           onChange={e => dispatch({ type: "renameGroup", id: g.id, name: e.target.value })} />
       </div>
       {cols.duration && (
@@ -191,20 +196,20 @@ function GroupRow({ group: g, rollup, index, count, calendar, dispatch, onMove, 
           {rollup && <><span className="num">{rollup.d}</span>{" "}<span className="unit">{unit}</span></>}
         </div>
       )}
-      {cols.start && <div className="c-start group-roll" data-col="start">{rollup ? formatDate(rollup.s, fmt) : ""}</div>}
-      {cols.finish && <div className="c-fin group-roll" data-col="finish">{rollup ? formatDate(rollup.e, fmt) : ""}</div>}
+      {cols.start && <div className="c-start group-roll" data-col="start">{rollup ? formatDate(rollup.s, fmt, locale) : ""}</div>}
+      {cols.finish && <div className="c-fin group-roll" data-col="finish">{rollup ? formatDate(rollup.e, fmt, locale) : ""}</div>}
       {cols.pct && <div className="c-pct group-roll" data-col="pct">{rollup ? `${rollup.p}%` : ""}</div>}
       {cols.preds && <div className="c-preds" data-col="preds" />}
       <div className="group-actions" ref={menuRef}>
-        <button type="button" className="icon-btn" aria-label={`Add task to ${label}`} title="Add a task to this group"
+        <button type="button" className="icon-btn" aria-label={t("group.addTask", label)} title={t("group.addTask.title")}
           onClick={() => onAdd?.(g.id)}>+</button>
-        <button type="button" className="icon-btn" aria-label={`Group actions for ${label}`} title="More"
+        <button type="button" className="icon-btn" aria-label={t("group.actions", label)} title={t("group.more")}
           aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(m => !m)}><MoreIcon /></button>
         {menu && (
-          <div className="group-menu" role="menu" aria-label={`Group actions for ${label}`}>
-            {menuItem("Move group up", () => onMove(g.id, index - 1, null), index === 0)}
-            {menuItem("Move group down", () => onMove(g.id, index + 1, null), index === count - 1)}
-            {menuItem("Delete group…", () => onDelete?.(g.id))}
+          <div className="group-menu" role="menu" aria-label={t("group.actions", label)}>
+            {menuItem(t("group.moveUp"), () => onMove(g.id, index - 1, null), index === 0)}
+            {menuItem(t("group.moveDown"), () => onMove(g.id, index + 1, null), index === count - 1)}
+            {menuItem(t("group.delete"), () => onDelete?.(g.id))}
           </div>
         )}
       </div>
@@ -230,7 +235,8 @@ function GridRow({ task: t, index, tasks, open, inGroup, groups, up, down, onTog
     const target = e.key === "ArrowUp" ? up : down;
     if (target) onMove(t.id, target, e.target as Element);
   };
-  const unit = calendar === "workdays" ? "wdays" : "days";
+  const { t: tr, notation } = useI18n();
+  const unit = tr(calendar === "workdays" ? "unit.workdays" : "unit.days", durationIn(t, calendar));
   const { settings } = useSettings();
   const cols = settings.columns;
   const fmt = settings.dateFormat;
@@ -239,69 +245,69 @@ function GridRow({ task: t, index, tasks, open, inGroup, groups, up, down, onTog
 
   const startCell = auto
     ? <ComputedDate value={t.s} fmt={fmt} />
-    : <DateCell value={t.s} label="Start" fmt={fmt} onCommit={date => dispatch({ type: "setStart", id: t.id, date })} />;
-  const finishCell = <DateCell value={t.e} label="Finish" fmt={fmt} onCommit={date => dispatch({ type: "setFinish", id: t.id, date })} />;
+    : <DateCell value={t.s} label={tr("grid.start")} fmt={fmt} onCommit={date => dispatch({ type: "setStart", id: t.id, date })} />;
+  const finishCell = <DateCell value={t.e} label={tr("grid.finish")} fmt={fmt} onCommit={date => dispatch({ type: "setFinish", id: t.id, date })} />;
 
   return (
     <>
       <div className={`row${inGroup ? " in-group" : ""}${dragging ? " dragging" : ""}`} role="row" data-task-id={t.id} data-auto={auto || undefined} onKeyDown={onKeyDown}>
         <div className="cell-id">
           {onGripDown && (
-            <span className="grip" aria-hidden="true" title="Drag to reorder" onPointerDown={e => onGripDown(e, { kind: "task", id: t.id })} />
+            <span className="grip" aria-hidden="true" title={tr("grid.dragTask")} onPointerDown={e => onGripDown(e, { kind: "task", id: t.id })} />
           )}
           {row}
         </div>
         <div className="cell-toggle">
-          <button type="button" className="toggle" aria-expanded={open} title="Task options"
-            aria-label={`${open ? "Collapse" : "Expand"} options for task ${row}`} onClick={() => onToggle(t.id)}>
+          <button type="button" className="toggle" aria-expanded={open} title={tr("grid.taskOptions")}
+            aria-label={tr(open ? "grid.collapseOptions" : "grid.expandOptions", row)} onClick={() => onToggle(t.id)}>
             <ChevronIcon />
           </button>
         </div>
         <div data-col="name">
-          <input type="text" className="cell-input name-input" value={t.n} maxLength={120} aria-label="Task name" title={t.n}
+          <input type="text" className="cell-input name-input" value={t.n} maxLength={120} aria-label={tr("grid.taskName")} title={t.n}
             onChange={e => dispatch({ type: "rename", id: t.id, name: e.target.value })} />
         </div>
         {cols.duration && <div className="c-dur cell-dur" data-col="duration"><DurationInput task={t} dispatch={dispatch} calendar={calendar} /><span className="unit">{unit}</span></div>}
         {cols.start && <div className="c-start" data-col="start">{startCell}</div>}
         {cols.finish && <div className="c-fin" data-col="finish">{finishCell}</div>}
         {cols.pct && <div className="cell-pct c-pct" data-col="pct" title={`${t.p}%`}>{t.p}%</div>}
-        {cols.preds && <div className="c-preds" data-col="preds"><PredecessorCell task={t} tasks={tasks} lang={settings.notation} calendar={calendar} dispatch={dispatch} /></div>}
+        {cols.preds && <div className="c-preds" data-col="preds"><PredecessorCell task={t} tasks={tasks} lang={notation} calendar={calendar} dispatch={dispatch} /></div>}
       </div>
       {open && (
         <div className="detail" data-task-id={t.id} onKeyDown={onKeyDown}>
           <div className="detail-body">
-            <span className="swatches" role="radiogroup" aria-label="Bar colour">
+            <span className="swatches" role="radiogroup" aria-label={tr("detail.colour")}>
               {PALETTE.map((c, ci) => (
                 <button key={c} type="button" className={`swatch${ci === t.c ? " active" : ""}`} style={{ background: c }}
-                  role="radio" aria-checked={ci === t.c} aria-label={`Colour ${ci + 1}`} title={`Colour ${ci + 1}`}
+                  role="radio" aria-checked={ci === t.c} aria-label={tr("detail.colourN", ci + 1)} title={tr("detail.colourN", ci + 1)}
                   onClick={() => dispatch({ type: "setColor", id: t.id, color: ci })} />
               ))}
             </span>
-            <label>Progress
-              <input type="range" min={0} max={100} step={5} value={t.p} aria-label="Progress"
+            <label>{tr("detail.progress")}
+              <input type="range" min={0} max={100} step={5} value={t.p} aria-label={tr("detail.progress")}
                 onChange={e => dispatch({ type: "setProgress", id: t.id, pct: Number(e.target.value) })} />
               <span className="progress-val">{t.p}%</span>
             </label>
-            <label className="narrow-only">Start {startCell}</label>
-            <label className="narrow-only">Finish {finishCell}</label>
-            <label className="narrow-only">Duration <DurationInput task={t} dispatch={dispatch} calendar={calendar} /> {unit}</label>
-            <label className="narrow-only">Predecessors <PredecessorCell task={t} tasks={tasks} lang={settings.notation} calendar={calendar} dispatch={dispatch} /></label>
+            <label className="narrow-only">{tr("grid.start")} {startCell}</label>
+            <label className="narrow-only">{tr("grid.finish")} {finishCell}</label>
+            <label className="narrow-only">{tr("grid.duration")} <DurationInput task={t} dispatch={dispatch} calendar={calendar} /> {unit}</label>
+            <label className="narrow-only">{tr("grid.preds")} <PredecessorCell task={t} tasks={tasks} lang={notation} calendar={calendar} dispatch={dispatch} /></label>
             {groups.length > 0 && (
-              <label>Group
-                <select className="group-select" value={t.g ?? ""} aria-label="Group"
+              <label>{tr("detail.group")}
+                <select className="group-select" value={t.g ?? ""} aria-label={tr("detail.group")}
                   onChange={e => dispatch({ type: "setTaskGroup", id: t.id, group: e.target.value === "" ? null : Number(e.target.value) })}>
-                  <option value="">(No group)</option>
-                  {groups.map(g => <option key={g.id} value={g.id}>{g.n || "Unnamed group"}</option>)}
+                  <option value="">{tr("detail.noGroup")}</option>
+                  {groups.map(g => <option key={g.id} value={g.id}>{g.n || tr("group.unnamed")}</option>)}
                 </select>
               </label>
             )}
             <span className="move-btns">
-              <button type="button" className="del move-btn" aria-label="Move task up" title="Move up (Alt+↑)" disabled={isFirst}
-                onClick={e => up && onMove(t.id, up, e.currentTarget)}>↑ Up</button>
-              <button type="button" className="del move-btn" aria-label="Move task down" title="Move down (Alt+↓)" disabled={isLast}
-                onClick={e => down && onMove(t.id, down, e.currentTarget)}>↓ Down</button>
+              <button type="button" className="del move-btn" aria-label={tr("detail.moveUp")} title={tr("detail.moveUp.title")} disabled={isFirst}
+                onClick={e => up && onMove(t.id, up, e.currentTarget)}>{tr("detail.up")}</button>
+              <button type="button" className="del move-btn" aria-label={tr("detail.moveDown")} title={tr("detail.moveDown.title")} disabled={isLast}
+                onClick={e => down && onMove(t.id, down, e.currentTarget)}>{tr("detail.down")}</button>
             </span>
-            <button type="button" className="del" title="Delete task" onClick={() => onDelete(t.id)}><TrashIcon /> Delete</button>
+            <button type="button" className="del" title={tr("detail.delete.title")} onClick={() => onDelete(t.id)}><TrashIcon /> {tr("detail.delete")}</button>
           </div>
         </div>
       )}

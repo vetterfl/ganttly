@@ -1,4 +1,4 @@
-import { COLUMN_DEFAULTS, DEFAULT_SETTINGS, loadSettings, mergeSettings, saveSettings, STORAGE_KEY } from "./settings";
+import { COLUMN_DEFAULTS, DEFAULT_SETTINGS, effectiveNotation, loadSettings, mergeSettings, saveSettings, STORAGE_KEY } from "./settings";
 
 function memoryStorage(init: Record<string, string> = {}): Storage {
   const m = new Map(Object.entries(init));
@@ -22,10 +22,11 @@ const throwing: Storage = {
 };
 
 describe("settings", () => {
-  it("defaults on first visit: German notation, all columns and overlays on, compact", () => {
+  it("defaults on first visit: automatic language and notation, all columns and overlays on, compact", () => {
     const s = loadSettings(memoryStorage());
     expect(s).toEqual(DEFAULT_SETTINGS);
-    expect(s.notation).toBe("de");
+    expect(s.notation).toBe("auto");
+    expect(s.language).toBe("auto");
     expect(s.density).toBe("compact");
     expect(Object.values(s.columns).every(Boolean)).toBe(true);
     expect([s.showArrows, s.showWeekends, s.showToday, s.showProgress].every(Boolean)).toBe(true);
@@ -87,6 +88,29 @@ describe("settings", () => {
       saveSettings({ ...DEFAULT_SETTINGS, columnWidths: { name: 300, pct: 90 } }, st);
       saveSettings(DEFAULT_SETTINGS, st);
       expect(loadSettings(st).columnWidths).toEqual({});
+    });
+  });
+
+  describe("language and notation", () => {
+    it("keep valid values and drop invalid ones", () => {
+      expect(mergeSettings({ language: "de", notation: "en" })).toMatchObject({ language: "de", notation: "en" });
+      expect(mergeSettings({ language: "fr", notation: "xx" })).toMatchObject({ language: "auto", notation: "auto" });
+    });
+    it("a stored explicit German notation is kept", () => {
+      const st = memoryStorage({ [STORAGE_KEY]: JSON.stringify({ notation: "de" }) });
+      expect(loadSettings(st)).toMatchObject({ notation: "de", language: "auto" });
+    });
+    it("Reset (DEFAULT_SETTINGS) restores automatic language and notation", () => {
+      const st = memoryStorage();
+      saveSettings({ ...DEFAULT_SETTINGS, language: "de", notation: "en" }, st);
+      saveSettings(DEFAULT_SETTINGS, st);
+      expect(loadSettings(st)).toMatchObject({ language: "auto", notation: "auto" });
+    });
+    it("effective notation follows the app language unless chosen explicitly", () => {
+      expect(effectiveNotation("auto", "de")).toBe("de");
+      expect(effectiveNotation("auto", "en")).toBe("en");
+      expect(effectiveNotation("de", "en")).toBe("de");
+      expect(effectiveNotation("en", "de")).toBe("en");
     });
   });
 });

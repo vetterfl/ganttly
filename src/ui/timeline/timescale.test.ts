@@ -3,8 +3,9 @@ import { avoidSpan, buildTimescale, isoWeek, weekendRects, type Cell } from "./t
 
 const D = (y: number, m: number, d: number) => new Date(y, m - 1, d);
 const lw = (s: string) => s.length * 7;
+const WEEK = { de: (n: number) => [`KW ${n}`, `${n}`], en: (n: number) => [`W${n}`, `${n}`] };
 const build = (min: Date, days: number, w: number, lang: "de" | "en" = "de", today?: Date) =>
-  buildTimescale(min, days, w, lang, { labelWidth: lw, locale: "en-US", today });
+  buildTimescale(min, days, w, { labelWidth: lw, locale: "en-US", today, weekLabel: WEEK[lang] });
 const labels = (cells: Cell[]) => cells.map(c => c.label).filter(Boolean);
 
 /** Cells tile the range exactly, and every label fits inside its own cell. */

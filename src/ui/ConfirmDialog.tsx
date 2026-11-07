@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, type RefObject } from "react";
+import { useI18n } from "../i18n/I18nContext";
 
 export interface ConfirmAction {
   label: string;
@@ -20,6 +21,7 @@ export function ConfirmDialog({ open, title, message, actions, onCancel, returnF
   onCancel: () => void;
   returnFocusRef?: RefObject<HTMLElement | null>;
 }) {
+  const { t } = useI18n();
   const dlg = useRef<HTMLDialogElement>(null);
   const firstAction = useRef<HTMLButtonElement>(null);
   const titleId = useId();
@@ -48,7 +50,7 @@ export function ConfirmDialog({ open, title, message, actions, onCancel, returnF
       <header id={titleId}>{title}</header>
       <div className="body" id={msgId}>{message}</div>
       <footer>
-        <button type="button" className="btn plain" onClick={onCancel}>Cancel</button>
+        <button type="button" className="btn plain" onClick={onCancel}>{t("dialog.cancel")}</button>
         <span className="actions">
           {actions.map((a, i) => (
             <button key={a.label} type="button" ref={i === 0 ? firstAction : undefined}

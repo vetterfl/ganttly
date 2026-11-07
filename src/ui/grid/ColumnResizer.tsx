@@ -1,4 +1,5 @@
 import { useRef, type RefObject } from "react";
+import { useI18n } from "../../i18n/I18nContext";
 import { clampColumnWidth, COLUMN_DEFAULTS, MAX_COLUMN_WIDTH, type ColumnSettings, type ColumnWidths, type ResizableCol } from "../../settings/settings";
 import { gridColumnVars, screenWidth } from "./columns";
 
@@ -22,6 +23,7 @@ export function ColumnResizer({ col, label, cols, widths, paneRef, onCommit }: {
   paneRef: RefObject<HTMLElement | null>;
   onCommit: (col: ResizableCol, width: number | null) => void;
 }) {
+  const { t } = useI18n();
   const drag = useRef<{ x: number; w0: number; w: number } | null>(null);
   const width = screenWidth(col, widths);
   const { min } = COLUMN_DEFAULTS[col];
@@ -35,8 +37,8 @@ export function ColumnResizer({ col, label, cols, widths, paneRef, onCommit }: {
   return (
     <div
       className="col-resizer" role="separator" aria-orientation="vertical" tabIndex={0}
-      aria-label={`Resize ${label} column`} aria-valuenow={width} aria-valuemin={min} aria-valuemax={MAX_COLUMN_WIDTH}
-      title="Drag to resize · double-click to fit"
+      aria-label={t("grid.resize", label)} aria-valuenow={width} aria-valuemin={min} aria-valuemax={MAX_COLUMN_WIDTH}
+      title={t("grid.resize.title")}
       onPointerDown={e => {
         if (e.button !== 0) return;
         e.preventDefault();

@@ -13,8 +13,10 @@ export interface ZoomApi {
   factor: number;
   /** Largest useful factor for the current project and window (day = MAX_DAY_PX). */
   maxZoom: number;
-  /** "Fit" or "156%". */
-  label: string;
+  /** True at Fit (factor 1). */
+  atFit: boolean;
+  /** The factor as a rounded percentage, e.g. 156. */
+  percent: number;
   canZoomIn: boolean;
   canZoomOut: boolean;
   /** Set the factor, keeping the date at `clientX` (default: viewport centre) in place. */
@@ -108,7 +110,7 @@ export function useZoom({ stored, onChange, tasks, availPx, today, workspaceRef,
   const atFit = factor <= FIT_ZOOM + 1e-9;
   return {
     w, factor, maxZoom,
-    label: atFit ? "Fit" : `${Math.round(factor * 100)}%`,
+    atFit, percent: Math.round(factor * 100),
     canZoomIn: factor < maxZoom - 1e-9,
     canZoomOut: !atFit,
     setFactor, zoomIn, zoomOut, fit,

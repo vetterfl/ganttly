@@ -91,25 +91,33 @@ export function clampZoomFactor(z: unknown): number {
 /** A task is auto-scheduled iff it has at least one predecessor link. */
 export const isAuto = (t: Task): boolean => t.deps.length > 0;
 
+/** Names for the sample project, in the UI language (passed in: core has no language). */
+export interface SampleNames { title: string; tasks: readonly string[] }
+const SAMPLE_EN: SampleNames = {
+  title: "Website Relaunch",
+  tasks: ["Research & strategy", "Wireframes", "Visual design", "Development", "Content & copywriting", "Testing & QA", "Launch 🚀"],
+};
+
 /** The 7-task sample shown when there is no (valid) `?d=` payload. Dates relative to `today`. */
-export function sampleProject(today: Date): Project {
+export function sampleProject(today: Date, names: SampleNames = SAMPLE_EN): Project {
+  const name = (i: number) => names.tasks[i] ?? SAMPLE_EN.tasks[i]!;
   const mk = (id: number, n: string, off: number, dur: number, c: number, p: number): Task => ({
     id, n, s: iso(addDays(today, off)), e: iso(addDays(today, off + dur - 1)), c, p, deps: [],
   });
   return {
-    title: "Website Relaunch",
+    title: names.title,
     zoom: FIT_ZOOM,
     calendar: "days",
     groups: [],
     nextId: 8,
     tasks: [
-      mk(1, "Research & strategy", -4, 5, 0, 100),
-      mk(2, "Wireframes", 1, 4, 4, 80),
-      mk(3, "Visual design", 5, 6, 3, 45),
-      mk(4, "Development", 10, 10, 1, 20),
-      mk(5, "Content & copywriting", 8, 7, 2, 60),
-      mk(6, "Testing & QA", 19, 4, 5, 0),
-      mk(7, "Launch 🚀", 23, 1, 6, 0),
+      mk(1, name(0), -4, 5, 0, 100),
+      mk(2, name(1), 1, 4, 4, 80),
+      mk(3, name(2), 5, 6, 3, 45),
+      mk(4, name(3), 10, 10, 1, 20),
+      mk(5, name(4), 8, 7, 2, 60),
+      mk(6, name(5), 19, 4, 5, 0),
+      mk(7, name(6), 23, 1, 6, 0),
     ],
   };
 }
@@ -117,20 +125,20 @@ export function sampleProject(today: Date): Project {
 export const UNTITLED = "Untitled Project";
 
 /** The empty project created by the New command. */
-export function emptyProject(): Project {
-  return { title: UNTITLED, zoom: FIT_ZOOM, calendar: "days", groups: [], tasks: [], nextId: 1 };
+export function emptyProject(title: string = UNTITLED): Project {
+  return { title, zoom: FIT_ZOOM, calendar: "days", groups: [], tasks: [], nextId: 1 };
 }
 
 /** Reducer actions. Tasks are addressed by stable id. */
 export type Action =
   | { type: "load"; project: Project }
-  /** Replaces everything with an empty "Untitled Project" (Fit zoom, nextId 1). */
-  | { type: "newProject" }
+  /** Replaces everything with an empty project titled `title` (default "Untitled Project"; Fit zoom, nextId 1). */
+  | { type: "newProject"; title?: string }
   /**
    * `today` is passed in to keep the reducer pure (used when there are no tasks).
    * `group`: the new task's group (null/absent = ungrouped); it becomes that section's last task.
    */
-  | { type: "addTask"; today: string; group?: number | null }
+  | { type: "addTask"; today: string; group?: number | null; /** Default "New task" (the UI passes its language's). */ name?: string }
   | { type: "deleteTask"; id: number }
   | { type: "rename"; id: number; name: string }
   /** Ignored for auto-scheduled tasks. Manual: if finish < start, finish := start. Snapped onto counted days. */
@@ -148,8 +156,8 @@ export type Action =
    * then applies to the flat task order, which is normalised afterwards.
    */
   | { type: "moveTask"; id: number; toIndex: number; group?: number | null }
-  /** Append an empty group "New group". */
-  | { type: "addGroup" }
+  /** Append an empty group named `name` (default "New group"). */
+  | { type: "addGroup"; name?: string }
   /** Truncated to MAX_NAME. */
   | { type: "renameGroup"; id: number; name: string }
   | { type: "toggleGroup"; id: number }

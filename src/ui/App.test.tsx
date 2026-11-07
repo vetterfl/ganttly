@@ -1,4 +1,7 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { App } from "./App";
+import { SettingsProvider } from "../settings/SettingsContext";
+import { I18nProvider } from "../i18n/I18nContext";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
 import { b64decode } from "../core/urlCodec";
@@ -206,7 +209,7 @@ describe("settings", () => {
     expect((screen.getByLabelText("Link notation") as HTMLSelectElement).value).toBe("en");
 
     await user.click(screen.getByRole("button", { name: "Reset to defaults" }));
-    expect((screen.getByLabelText("Link notation") as HTMLSelectElement).value).toBe("de");
+    expect((screen.getByLabelText("Link notation") as HTMLSelectElement).value).toBe("auto");
     expect((screen.getByLabelText("Duration column") as HTMLInputElement).checked).toBe(true);
     expect(screen.getByText("Duration", { selector: ".grid-head .head-label" })).toBeTruthy();
   });
@@ -457,7 +460,7 @@ describe("project calendar", () => {
     await openSettings(user);
     await user.selectOptions(screen.getByLabelText("Link notation"), "en");
     await user.click(screen.getByRole("button", { name: "Reset to defaults" }));
-    expect((screen.getByLabelText("Link notation") as HTMLSelectElement).value).toBe("de");
+    expect((screen.getByLabelText("Link notation") as HTMLSelectElement).value).toBe("auto");
     expect((screen.getByRole("radio", { name: "Working days (Mon–Fri)" }) as HTMLInputElement).checked).toBe(true);
     expect(urlProject().calendar).toBe("workdays");
   });
@@ -700,5 +703,102 @@ describe("groups: moving tasks and deleting groups", () => {
     await deleteGroupVia(user, "Empty");
     expect(deleteDlg().open).toBe(false);
     expect(urlProject().groups.map(g => g.n)).toEqual(["Acme", "Globex"]);
+  });
+});
+
+describe("languages", () => {
+  const auto = { ...DEFAULT_SETTINGS }; // language and notation "auto"
+  const linked = () => mkProject([
+    mkTask(1, "A", "2026-11-02", "2026-11-03"),
+    mkTask(2, "B", "2026-11-04", "2026-11-05"),
+    mkTask(3, "C", "2026-11-06", "2026-11-09"),
+    mkTask(4, "D", "2026-11-10", "2026-11-12"),
+    mkTask(5, "E", "2026-11-13", "2026-11-14", [lk(3), lk(4, "FF", -2)]),
+  ]);
+  const predIn = (r: HTMLElement) => r.querySelector<HTMLInputElement>(".c-preds input")!;
+  const headers = () => [...document.querySelectorAll(".grid-head .head-label")].map(h => h.textContent);
+  const ribbon = () => [...document.querySelectorAll(".ribbon .btn")].map(b => b.textContent);
+
+  it("a German browser gets the German app on the first visit", () => {
+    renderApp(linked(), auto, ["de-AT", "en"]);
+    expect(document.documentElement.lang).toBe("de");
+    expect(ribbon()).toContain("Vorgang hinzufügen");
+    expect(ribbon()).toContain("Neu");
+    expect(headers()).toEqual(["Vorgangsname", "Dauer", "Anfang", "Ende", "% Fertig", "Vorgänger"]);
+    expect(row(1).querySelector(".c-dur .unit")!.textContent).toBe("Tage");
+    expect(predIn(row(5)).value).toBe("3;4EE-2T"); // notation follows the app language
+  });
+
+  it("an unsupported browser language falls back to English", () => {
+    renderApp(linked(), auto, ["fr-FR", "es"]);
+    expect(document.documentElement.lang).toBe("en");
+    expect(ribbon()).toContain("Add task");
+    expect(predIn(row(5)).value).toBe("3,4FF-2d");
+  });
+
+  it("switching to Deutsch translates the app and the open dialog at once, and persists", async () => {
+    const user = userEvent.setup();
+    renderApp(linked(), auto, ["en-US"]);
+    await user.click(screen.getByRole("button", { name: /Settings/ }));
+    await user.selectOptions(screen.getByLabelText("Language"), "de");
+    expect(ribbon()).toContain("Vorgang hinzufügen");
+    expect(headers()[0]).toBe("Vorgangsname");
+    const dlg = document.querySelector<HTMLDialogElement>("dialog.settings-dialog")!;
+    expect(dlg.open).toBe(true);
+    expect(dlg.querySelector("header")!.textContent).toBe("Einstellungen");
+    expect(within(dlg).getByLabelText("Sprache")).toBeTruthy();
+    expect(predIn(row(5)).value).toBe("3;4EE-2T");
+    expect(JSON.parse(localStorage.getItem("ganttly.settings.v1")!).language).toBe("de");
+    // Reset returns to Automatic (English browser → English)
+    await user.click(within(dlg).getByRole("button", { name: "Auf Standard zurücksetzen" }));
+    expect((screen.getByLabelText("Language") as HTMLSelectElement).value).toBe("auto");
+    expect(ribbon()).toContain("Add task");
+  });
+
+  it("an explicit notation wins over the app language", () => {
+    renderApp(linked(), { ...DEFAULT_SETTINGS, notation: "de" }, ["en-US"]);
+    expect(ribbon()).toContain("Add task");
+    expect(predIn(row(5)).value).toBe("3;4EE-2T");
+  });
+
+  it("Add task in German creates 'Neuer Vorgang', which stays after switching to English", async () => {
+    const user = userEvent.setup();
+    renderApp(linked(), auto, ["de-DE"]);
+    await user.click(screen.getByRole("button", { name: "Vorgang hinzufügen" }));
+    expect(nameOf(row(6))).toBe("Neuer Vorgang");
+    await user.click(screen.getByRole("button", { name: /Einstellungen/ }));
+    await user.selectOptions(screen.getByLabelText("Sprache"), "en");
+    expect(ribbon()).toContain("Add task");
+    expect(nameOf(row(6))).toBe("Neuer Vorgang");
+    expect(urlProject().tasks[5]!.n).toBe("Neuer Vorgang");
+  });
+
+  it("German error message for a circular dependency", async () => {
+    const user = userEvent.setup();
+    const p = linked();
+    p.tasks[3] = mkTask(4, "D", "2026-11-10", "2026-11-12", [lk(3)]);
+    renderApp(p, auto, ["de"]);
+    const input = predIn(row(3));
+    await user.clear(input);
+    await user.type(input, "4{Enter}");
+    expect(within(row(3)).getByRole("alert").textContent).toBe("Zirkuläre Abhängigkeit: Vorgang 4 hängt bereits von Vorgang 3 ab");
+  });
+
+  it("New project and groups get German default names; working days read 'AT'", async () => {
+    const user = userEvent.setup();
+    renderApp({ ...linked(), calendar: "workdays" }, auto, ["de"]);
+    expect(row(1).querySelector(".c-dur .unit")!.textContent).toBe("AT");
+    await user.click(screen.getByRole("button", { name: /Gruppe hinzufügen/ }));
+    expect(urlProject().groups[0]!.n).toBe("Neue Gruppe");
+    await user.click(screen.getByRole("button", { name: /^Neu$/ }));
+    await user.click(screen.getByRole("button", { name: "Neues Projekt" }));
+    expect(urlProject().title).toBe("Unbenanntes Projekt");
+  });
+
+  it("the sample project (no link) is named in the app language", () => {
+    window.history.replaceState(null, "", "/");
+    render(<SettingsProvider initial={DEFAULT_SETTINGS}><I18nProvider browser={["de-DE"]}><App /></I18nProvider></SettingsProvider>);
+    expect((screen.getByLabelText("Projekttitel") as HTMLInputElement).value).toBe("Website-Relaunch");
+    expect(nameOf(row(1))).toBe("Recherche & Strategie");
   });
 });

@@ -17,7 +17,8 @@ MS Project–style Gantt charts in the browser — with task dependencies, prede
 - **Zoom that fits any project:** *Fit* (100%) shows the whole project, however long, in the visible timeline. Zoom in from there in fine steps with − / + (×1.25), the zoom slider, Ctrl/⌘ + / −, or Ctrl/⌘ + mouse wheel / trackpad pinch over the chart (the date under the pointer stays put), up to 120 px per day. *Fit* or Ctrl/⌘ 0 goes back. The timescale adapts: days → Mondays → calendar weeks (KW/W) → months → quarters.
 - **Drag to pan:** grab the timeline with the left mouse button (or anywhere with the middle button) and drag to move around the chart, horizontally and vertically.
 - **Shareable links:** *Copy link* puts the entire chart (title, zoom, calendar, groups, tasks, links) into a URL. Older Ganttly links keep working; links from before the fit-relative zoom open at *Fit*.
-- **View settings** (per browser, never part of the link): German or English link notation, date format, row density, visible columns and their widths, and toggles for arrows, weekend shading, today marker and progress.
+- **Languages:** English and German (with MS Project's German terms). *Settings → Language* defaults to *Automatic*, which picks your browser's language (falling back to English). Dates, month names, calendar weeks and the predecessor notation follow the app language unless you choose otherwise.
+- **View settings** (per browser, never part of the link): app language, German or English link notation, date format, row density, visible columns and their widths, and toggles for arrows, weekend shading, today marker and progress.
 - Bold colour palette, landscape print layout, works on phones.
 
 ## Predecessor shortcuts
@@ -59,10 +60,20 @@ Run a single test file with `npx vitest run src/core/schedule.test.ts`.
 
 The build is a plain static site with relative asset paths, so `dist/` can be served from any host and any sub-path. Every push to `main` is linted, tested, built and deployed to GitHub Pages by [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml).
 
+### Adding a language
+
+All interface texts live in `src/i18n/`. `en.ts` is the source of truth; `de.ts` is the complete German translation.
+
+1. Copy `src/i18n/en.ts` to e.g. `fr.ts` and translate the values. Type it as `Partial<Messages>` while it is incomplete — missing texts fall back to English.
+2. Add `{ code: "fr", name: "Français", messages: fr }` to `LANGUAGES` in `src/i18n/index.ts`.
+
+That's it: the language appears in *Settings → Language* and is picked automatically for browsers that prefer it.
+
 ### Project layout
 
 ```
 src/core/       framework-free logic: model, scheduler, notation parser, URL codec (fully unit-tested)
+src/i18n/       interface texts per language (en.ts = source of truth, de.ts), language detection, t()
 src/settings/   per-browser view settings (localStorage)
 src/ui/         React components — task grid, timeline, dependency arrows, settings and confirm dialogs
 src/styles/     theme and layout CSS

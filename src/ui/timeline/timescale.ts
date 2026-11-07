@@ -3,7 +3,6 @@
 // number of visible units (months, weeks, …), not with the number of days.
 import { addDays, diffDays } from "../../core/dates";
 
-export type Lang = "de" | "en";
 
 export interface Cell {
   key: string;
@@ -72,9 +71,11 @@ const nextMonday = (d: Date) => addDays(d, 7 - ((d.getDay() + 6) % 7));
 const nextDay = (d: Date) => addDays(d, 1);
 
 export function buildTimescale(
-  min: Date, totalDays: number, w: number, lang: Lang,
+  min: Date, totalDays: number, w: number,
   opts: {
     today?: Date;
+    /** Calendar-week label candidates for ISO week n, longest first (e.g. ["KW 45", "45"]). Default English. */
+    weekLabel?: (n: number) => string[];
     /** Width of a tier label (12px semibold). */
     labelWidth?: (s: string) => number;
     /** Width of a day number (11px regular); centred, so it needs no padding. */
@@ -84,6 +85,7 @@ export function buildTimescale(
 ): Timescale {
   const lw = opts.labelWidth ?? ((s: string) => s.length * 7);
   const dlw = opts.dayLabelWidth ?? ((s: string) => s.length * 6);
+  const weekLabel = opts.weekLabel ?? ((n: number) => [`W${n}`, `${n}`]);
   const loc = opts.locale;
   const cells = (spans: [number, number, Date][], label: (d: Date, width: number) => string, kind: string): Cell[] =>
     spans.map(([a, b, d]) => {
@@ -112,7 +114,7 @@ export function buildTimescale(
     const weeks = units(min, totalDays, nextMonday);
     const bottom = cells(weeks, (d, width) => {
       const n = isoWeek(d);
-      return fit(width, lang === "de" ? [`KW ${n}`, `${n}`] : [`W${n}`, `${n}`], lw);
+      return fit(width, weekLabel(n), lw);
     }, "w");
     return { top, bottom, lines: bottom.map(c => c.x), weekends: true, dayNumbers: false };
   }

@@ -1,6 +1,8 @@
 import { useId, useState, type Dispatch } from "react";
 import type { Action, Calendar, Task } from "../../core/model";
 import { formatPredecessors, parsePredecessors, type Lang, type ParseError } from "../../core/notation";
+import { useI18n } from "../../i18n/I18nContext";
+import type { Translate } from "../../i18n";
 
 /**
  * Predecessors in MS Project shortcut notation (German or English input, shown
@@ -12,6 +14,7 @@ export function PredecessorCell({ task, tasks, lang, calendar, dispatch }: {
 }) {
   const [draft, setDraft] = useState<string | null>(null);
   const [error, setError] = useState<ParseError | null>(null);
+  const { t } = useI18n();
   const errId = useId();
   const formatted = formatPredecessors(task.deps, tasks, lang);
 
@@ -34,8 +37,8 @@ export function PredecessorCell({ task, tasks, lang, calendar, dispatch }: {
     <>
       <input
         type="text" className="cell-input" spellCheck={false} autoComplete="off"
-        aria-label="Predecessors"
-        title={(draft ?? formatted) || (lang === "de" ? "Vorgänger, z. B. 3;4EA+2T" : "Predecessors, e.g. 3,4FS+2d")}
+        aria-label={t("grid.preds")}
+        title={(draft ?? formatted) || t(lang === "de" ? "grid.preds.hint.de" : "grid.preds.hint.en")}
         value={draft ?? formatted}
         aria-invalid={error ? "true" : undefined}
         aria-describedby={error ? errId : undefined}
@@ -47,7 +50,17 @@ export function PredecessorCell({ task, tasks, lang, calendar, dispatch }: {
         }}
         onBlur={commit}
       />
-      {error && <div className="cell-error" id={errId} role="alert">{error.message}</div>}
+      {error && <div className="cell-error" id={errId} role="alert">{errorText(error, t)}</div>}
     </>
   );
+}
+
+/** A parse error in the app language (core only provides kind + params). */
+function errorText(e: ParseError, t: Translate): string {
+  switch (e.kind) {
+    case "syntax": return t("error.syntax", e.params.entry ?? e.entry);
+    case "unknown": return t("error.unknown", e.params.row ?? e.entry);
+    case "self": return t("error.self");
+    case "cycle": return t("error.cycle", { rows: e.params.rows ?? e.entry, me: e.params.me ?? 0 });
+  }
 }
